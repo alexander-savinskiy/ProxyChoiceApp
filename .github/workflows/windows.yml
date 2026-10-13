@@ -59,14 +59,17 @@ jobs:
         run: |
           [xml]$project = Get-Content './src/ProxyChoiceApp/ProxyChoiceApp.csproj'
           if ($env:RELEASE_TAG -ne ('v' + $project.Project.PropertyGroup.Version)) { throw 'The release tag must match the project version.' }
+          $version = $project.Project.PropertyGroup.Version
+          $artifacts = @('./dist/release/ProxyChoiceApp.exe', './dist/release/ProxyChoiceApp-Setup.exe', "./dist/release/ProxyChoiceApp-$version-source.zip", "./dist/release/ProxyChoiceApp-$version-win-x64.zip", './dist/release/SHA256SUMS.txt')
+          foreach ($file in $artifacts) { if (-not (Test-Path -LiteralPath $file)) { throw "Missing release asset: $file" } }
           gh release view "$env:RELEASE_TAG" --json assets --jq '.assets | length'
           if ($LASTEXITCODE -eq 0) {
-            gh release upload "$env:RELEASE_TAG" ./dist/release/ProxyChoiceApp.exe ./dist/release/ProxyChoiceApp-Setup.exe ./dist/release/*.zip ./dist/release/SHA256SUMS.txt --clobber
+            gh release upload "$env:RELEASE_TAG" @artifacts --clobber
             if ($LASTEXITCODE -ne 0) { throw 'Release upload failed.' }
             gh release edit "$env:RELEASE_TAG" --draft=false --title "ProxyChoiceApp $env:RELEASE_TAG" --notes-file ./docs/ReleaseNotes.md
             if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
           } else {
-            gh release create "$env:RELEASE_TAG" ./dist/release/ProxyChoiceApp.exe ./dist/release/ProxyChoiceApp-Setup.exe ./dist/release/*.zip ./dist/release/SHA256SUMS.txt --title "ProxyChoiceApp $env:RELEASE_TAG" --notes-file ./docs/ReleaseNotes.md
+            gh release create "$env:RELEASE_TAG" @artifacts --target "$env:GITHUB_SHA" --title "ProxyChoiceApp $env:RELEASE_TAG" --notes-file ./docs/ReleaseNotes.md
             if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
           }
 
