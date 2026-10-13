@@ -47,5 +47,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$env:GITHUB_REF_NAME" ./dist/release/ProxyChoiceApp.exe ./dist/release/ProxyChoiceApp-Setup.exe ./dist/release/*.zip ./dist/release/SHA256SUMS.txt --title "ProxyChoiceApp $env:GITHUB_REF_NAME" --notes-file ./docs/ReleaseNotes.md
-          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+          gh release view "$env:GITHUB_REF_NAME" --json tagName
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host 'The release already exists. This verified build is available as a workflow artifact.'
+          } else {
+            gh release create "$env:GITHUB_REF_NAME" ./dist/release/ProxyChoiceApp.exe ./dist/release/ProxyChoiceApp-Setup.exe ./dist/release/*.zip ./dist/release/SHA256SUMS.txt --title "ProxyChoiceApp $env:GITHUB_REF_NAME" --notes-file ./docs/ReleaseNotes.md
+            if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
+          }
