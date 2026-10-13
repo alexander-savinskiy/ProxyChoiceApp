@@ -5,6 +5,15 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish the verified release
+        type: boolean
+        default: true
+      release_tag:
+        description: Release tag matching the project version
+        type: string
+        default: v1.0.0
 permissions:
   contents: read
 jobs:
@@ -41,16 +50,23 @@ jobs:
             dist/release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.publish_release)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
         run: |
-          gh release view "$env:GITHUB_REF_NAME" --json tagName
+          [xml]$project = Get-Content './src/ProxyChoiceApp/ProxyChoiceApp.csproj'
+          if ($env:RELEASE_TAG -ne ('v' + $project.Project.PropertyGroup.Version)) { throw 'The release tag must match the project version.' }
+          gh release view "$env:RELEASE_TAG" --json assets --jq '.assets | length'
           if ($LASTEXITCODE -eq 0) {
-            Write-Host 'The release already exists. This verified build is available as a workflow artifact.'
+            gh release upload "$env:RELEASE_TAG" ./dist/release/ProxyChoiceApp.exe ./dist/release/ProxyChoiceApp-Setup.exe ./dist/release/*.zip ./dist/release/SHA256SUMS.txt --clobber
+            if ($LASTEXITCODE -ne 0) { throw 'Release upload failed.' }
+            gh release edit "$env:RELEASE_TAG" --draft=false --title "ProxyChoiceApp $env:RELEASE_TAG" --notes-file ./docs/ReleaseNotes.md
+            if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
           } else {
-            gh release create "$env:GITHUB_REF_NAME" ./dist/release/ProxyChoiceApp.exe ./dist/release/ProxyChoiceApp-Setup.exe ./dist/release/*.zip ./dist/release/SHA256SUMS.txt --title "ProxyChoiceApp $env:GITHUB_REF_NAME" --notes-file ./docs/ReleaseNotes.md
+            gh release create "$env:RELEASE_TAG" ./dist/release/ProxyChoiceApp.exe ./dist/release/ProxyChoiceApp-Setup.exe ./dist/release/*.zip ./dist/release/SHA256SUMS.txt --title "ProxyChoiceApp $env:RELEASE_TAG" --notes-file ./docs/ReleaseNotes.md
             if ($LASTEXITCODE -ne 0) { throw 'Release publication failed.' }
           }
+
