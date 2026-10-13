@@ -1,0 +1,13 @@
+<Window x:Class="ProxyChoiceApp.RunningAppsWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:loc="clr-namespace:ProxyChoiceApp.Localization" Title="{loc:Tr PickApps}" Width="700" Height="550" MinWidth="600" MinHeight="440" WindowStartupLocation="CenterOwner" ShowInTaskbar="False" Loaded="Window_Loaded" Closing="Window_Closing">
+  <Grid Margin="20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+    <StackPanel><TextBlock Text="{loc:Tr PickApps}" FontSize="24" FontWeight="SemiBold" /><TextBlock Text="{loc:Tr PickAppsHint}" Style="{StaticResource Hint}" Margin="0,8,0,14" /></StackPanel>
+    <Grid Grid.Row="1"><Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="12" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+      <TextBox x:Name="SearchBox" AutomationProperties.Name="{loc:Tr SearchApp}" TextChanged="Search_Changed" />
+      <Button x:Name="RefreshButton" Grid.Column="2" Content="{loc:Tr Refresh}" Click="Refresh_Click" />
+    </Grid>
+    <TextBlock x:Name="StatusText" Grid.Row="2" Style="{StaticResource Hint}" Text="{loc:Tr LoadingApps}" Margin="0,8,0,10" />
+    <ListBox Grid.Row="3" x:Name="ProcessList" SelectionMode="Extended" SelectionChanged="Selection_Changed" AutomationProperties.Name="{loc:Tr Applications}"><ListBox.ItemTemplate><DataTemplate><StackPanel><TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" /><TextBlock Text="{Binding Path}" Style="{StaticResource Hint}" Margin="0,4,0,0" /></StackPanel></DataTemplate></ListBox.ItemTemplate></ListBox>
+    <DockPanel Grid.Row="4" Margin="0,14,0,0"><Button Content="{loc:Tr Cancel}" IsCancel="True" DockPanel.Dock="Right" Margin="12,0,0,0" /><Button x:Name="AddSelectedButton" Content="{loc:Tr AddSelected}" IsEnabled="False" Style="{StaticResource Primary}" IsDefault="True" Click="Add_Click" /></DockPanel>
+  </Grid>
+</Window>

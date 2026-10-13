@@ -1,0 +1,12 @@
+.tools/
+vendor/*.zip
+**/bin/
+**/obj/
+dist/
+preview-data/
+**/preview-data/
+artifacts/
+*.user
+*.dat
+*.log
+*.installing
