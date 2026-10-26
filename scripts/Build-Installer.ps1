@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $workspace = Split-Path -Parent $PSScriptRoot
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $workspace 'dist' }
 $OutputDirectory = [System.IO.Path]::GetFullPath($OutputDirectory)
-if (-not (Test-Path -LiteralPath (Join-Path $OutputDirectory 'ProxyChoiceApp.exe'))) { throw 'Сначала выполните dotnet publish приложения.' }
+if (-not (Test-Path -LiteralPath (Join-Path $OutputDirectory 'ProxyChoicePro.exe'))) { throw 'Сначала выполните dotnet publish приложения.' }
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compiler)) { $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe' }
 if (-not (Test-Path -LiteralPath $compiler)) { throw 'Не найден стандартный компилятор .NET Framework Windows.' }
@@ -20,8 +20,8 @@ foreach ($code in @('en','fr','es','zh','de','ru')) {
 }
 & $compiler @common @languages "/out:$(Join-Path $staging 'Uninstall.exe')" (Join-Path $workspace 'installer\Uninstall.cs') (Join-Path $workspace 'installer\Texts.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Ошибка сборки удаления.' }
-$payload = @('ProxyChoiceApp.exe','Uninstall.exe','README.txt','LICENSE.txt','THIRD-PARTY-NOTICES.txt','DOTNET-LICENSE.txt','DOTNET-THIRD-PARTY-NOTICES.txt','WINDOWS-DESKTOP-LICENSE.txt')
-$payload += @('docs/Guide-ru.md','docs/Guide-en.md','docs/Guide-de.md','docs/Guide-es.md')
+$payload = @('ProxyChoicePro.exe','Uninstall.exe','README.txt','LICENSE.txt','THIRD-PARTY-NOTICES.txt','DOTNET-LICENSE.txt','DOTNET-THIRD-PARTY-NOTICES.txt','WINDOWS-DESKTOP-LICENSE.txt')
+$payload += @('docs/Guide-ru.md','docs/Guide-en.md','docs/Guide-de.md','docs/Guide-es.md','docs/Guide-fr.md','docs/Guide-zh.md','docs/Keenetic-en.md','docs/Keenetic-ru.md','docs/Keenetic-fr.md','docs/Keenetic-de.md','docs/Keenetic-es.md','docs/Keenetic-zh.md','docs/work-client.example.conf')
 $hashLines = @()
 $resources = @()
 foreach ($name in $payload) {
@@ -33,6 +33,6 @@ foreach ($name in $payload) {
 $hashFile = Join-Path $staging 'payload.sha256'
 $hashLines | Set-Content -LiteralPath $hashFile -Encoding utf8
 $resources += "/resource:$hashFile,payload.sha256"
-& $compiler @common @languages @resources "/out:$(Join-Path $OutputDirectory 'ProxyChoiceApp-Setup.exe')" (Join-Path $workspace 'installer\Setup.cs') (Join-Path $workspace 'installer\Texts.cs')
+& $compiler @common @languages @resources "/out:$(Join-Path $OutputDirectory 'ProxyChoicePro-Setup.exe')" (Join-Path $workspace 'installer\Setup.cs') (Join-Path $workspace 'installer\Texts.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Ошибка сборки установщика.' }
-Get-Item -LiteralPath (Join-Path $OutputDirectory 'ProxyChoiceApp-Setup.exe') | Select-Object Name,Length
+Get-Item -LiteralPath (Join-Path $OutputDirectory 'ProxyChoicePro-Setup.exe') | Select-Object Name,Length

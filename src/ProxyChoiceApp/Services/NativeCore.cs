@@ -29,15 +29,18 @@ public sealed class NativeCore : IAsyncDisposable
     public bool ForcedStop { get; private set; }
     public string? ShutdownDiagnostic { get; private set; }
 
-    public NativeCore(string executable, string config) : this(executable, new[] { "run", "-c", config }) { }
+    public NativeCore(string executable, string config, string? diagnosticPath = null) : this(executable, new[] { "run", "-c", config }, diagnosticPath) { }
 
-    internal NativeCore(string executable, string[] arguments)
+    internal NativeCore(string executable, string[] arguments, string? diagnosticPath = null)
     {
+        using var capture = diagnosticPath is null ? null : new StartupCapture(diagnosticPath);
         _job = CreateLifetimeJob();
-        var startup = new StartupInfo { Size = Marshal.SizeOf<StartupInfo>(), Flags = 1, ShowWindow = 0 };
+        var startup = new StartupInfoEx { Startup = new StartupInfo { Size = Marshal.SizeOf<StartupInfo>(), Flags = 1, ShowWindow = 0 } };
+        capture?.Apply(ref startup);
         var command = new StringBuilder(Quote(executable));
         foreach (var argument in arguments) command.Append(' ').Append(Quote(argument));
-        if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, false, 0x00000010 | 0x00000004,
+        if (!CreateProcess(executable, command, IntPtr.Zero, IntPtr.Zero, capture is not null,
+            0x00000010 | 0x00000004 | (capture is null ? 0u : 0x00080000u),
             IntPtr.Zero, Path.GetDirectoryName(executable), ref startup, out var created))
         { _job.Dispose(); throw new Win32Exception(); }
         try
@@ -128,6 +131,57 @@ public sealed class NativeCore : IAsyncDisposable
 
     public static string Quote(string value) => "\"" + value.Replace("\"", "\\\"") + "\"";
 
+    // Go can terminate before it opens the configured log (panic, driver or runtime errors).
+    // Capture both standard streams while retaining the hidden console used for graceful stop.
+    // The explicit handle list prevents inheritance of unrelated GUI handles.
+    private sealed class StartupCapture : IDisposable
+    {
+        private SafeFileHandle? _output, _input;
+        private IntPtr _attributes, _handles;
+        private bool _initialized;
+        public StartupCapture(string path)
+        {
+            try {
+                var security = new SecurityAttributes { Size = Marshal.SizeOf<SecurityAttributes>(), InheritHandle = true };
+                _output = CreateFile(path, 0x40000000, 7, ref security, 2, 0x80, IntPtr.Zero);
+                if (_output.IsInvalid) throw new Win32Exception();
+                _input = CreateFile("NUL", 0x80000000, 3, ref security, 3, 0x80, IntPtr.Zero);
+                if (_input.IsInvalid) throw new Win32Exception();
+                IntPtr size = IntPtr.Zero;
+                InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
+                _attributes = Marshal.AllocHGlobal(size);
+                if (!InitializeProcThreadAttributeList(_attributes, 1, 0, ref size)) throw new Win32Exception();
+                _initialized = true;
+                _handles = Marshal.AllocHGlobal(IntPtr.Size * 2);
+                Marshal.WriteIntPtr(_handles, _input.DangerousGetHandle());
+                Marshal.WriteIntPtr(_handles, IntPtr.Size, _output.DangerousGetHandle());
+                if (!UpdateProcThreadAttribute(_attributes, 0, new IntPtr(0x00020002), _handles,
+                    new IntPtr(IntPtr.Size * 2), IntPtr.Zero, IntPtr.Zero)) throw new Win32Exception();
+            } catch { Dispose(); throw; }
+        }
+        public void Apply(ref StartupInfoEx startup)
+        {
+            startup.Startup.Size = Marshal.SizeOf<StartupInfoEx>();
+            startup.Startup.Flags |= 0x100;
+            startup.Startup.StdInput = _input!.DangerousGetHandle();
+            startup.Startup.StdOutput = startup.Startup.StdError = _output!.DangerousGetHandle();
+            startup.Attributes = _attributes;
+        }
+        public void Dispose()
+        {
+            if (_initialized) { DeleteProcThreadAttributeList(_attributes); _initialized = false; }
+            if (_attributes != IntPtr.Zero) { Marshal.FreeHGlobal(_attributes); _attributes = IntPtr.Zero; }
+            if (_handles != IntPtr.Zero) { Marshal.FreeHGlobal(_handles); _handles = IntPtr.Zero; }
+            _input?.Dispose(); _output?.Dispose();
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityAttributes
+    { public int Size; public IntPtr Descriptor; [MarshalAs(UnmanagedType.Bool)] public bool InheritHandle; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StartupInfoEx { public StartupInfo Startup; public IntPtr Attributes; }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct StartupInfo
     {
@@ -154,7 +208,14 @@ public sealed class NativeCore : IAsyncDisposable
     }
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool CreateProcess(string application, StringBuilder command, IntPtr processAttributes, IntPtr threadAttributes,
-        bool inheritHandles, uint flags, IntPtr environment, string? directory, ref StartupInfo startup, out ProcessInfo info);
+        bool inheritHandles, uint flags, IntPtr environment, string? directory, ref StartupInfoEx startup, out ProcessInfo info);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateFile(string name, uint access, uint share, ref SecurityAttributes security, uint creation, uint flags, IntPtr template);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool InitializeProcThreadAttributeList(IntPtr list, int count, int flags, ref IntPtr size);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool UpdateProcThreadAttribute(IntPtr list, uint flags, IntPtr attribute, IntPtr value, IntPtr size, IntPtr previous, IntPtr returned);
+    [DllImport("kernel32.dll")] private static extern void DeleteProcThreadAttributeList(IntPtr list);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern uint ResumeThread(IntPtr thread);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool CloseHandle(IntPtr handle);
     [DllImport("kernel32.dll", SetLastError = true)] private static extern bool TerminateProcess(IntPtr process, uint exitCode);

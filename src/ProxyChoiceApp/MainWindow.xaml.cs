@@ -41,7 +41,7 @@ public partial class MainWindow : Window
     private readonly Forms.NotifyIcon _tray;
     private readonly Drawing.Icon _redIcon, _greenIcon;
     private readonly Forms.ToolStripItem _trayOpen, _trayDisconnect, _trayExit;
-    private bool _busy, _closing, _allowClose, _healthy, _initialised, _loading, _syncing, _tickRunning;
+    private bool _busy, _closing, _allowClose, _healthy, _initialised, _loading, _syncing, _tickRunning, _noticeError;
     private Task? _healthTask;
     private DateTime _connectedAt, _lastHealthAt;
     private string? _serverIp;
@@ -53,25 +53,27 @@ public partial class MainWindow : Window
         profiles.Normalize(); _profiles = profiles; _settings = profiles.SelectedSettings(); _preview = preview;
         L.Current.Set(profiles.Language);
         InitializeComponent(); DataContext = this;
+        VersionText.Text = "ProxyChoicePro " + Assembly.GetExecutingAssembly().GetName().Version!.ToString(3);
         _loading = true;
         LanguagePicker.ItemsSource = L.Supported; LanguagePicker.SelectedValue = profiles.Language;
         _loading = false;
         foreach (var path in profiles.ProxyApps) AddApp(path, selected: true);
         RefreshProfiles();
-        _redIcon = LoadTrayIcon("disconnected"); _greenIcon = LoadTrayIcon("connected");
+        _redIcon = LoadTrayIcon("error"); _greenIcon = LoadTrayIcon("connected"); _grayIcon = LoadTrayIcon("disconnected"); _amberIcon = LoadTrayIcon("connecting");
         var menu = new Forms.ContextMenuStrip();
         _trayOpen = menu.Items.Add("", null, (_, _) => Dispatcher.BeginInvoke(RestoreWindow));
         _trayDisconnect = menu.Items.Add("", null, (_, _) => Dispatcher.BeginInvoke(async () => {
+            if (_reconnecting) { await CancelReconnectAsync(); return; }
             if (_busy || _session is null) return;
             SetBusy(true); try { await DisconnectAsync(); } catch (Exception error) { ReportError(error); } finally { SetBusy(false); }
         }));
         menu.Items.Add(new Forms.ToolStripSeparator());
         _trayExit = menu.Items.Add("", null, (_, _) => Dispatcher.BeginInvoke(Close));
-        _tray = new Forms.NotifyIcon { Icon = _redIcon, Text = "ProxyChoiceApp", Visible = true, ContextMenuStrip = menu };
+        _tray = new Forms.NotifyIcon { Icon = _grayIcon, Text = "ProxyChoicePro", Visible = true, ContextMenuStrip = menu };
         _tray.DoubleClick += (_, _) => Dispatcher.BeginInvoke(RestoreWindow);
         _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _timer.Tick += Timer_Tick; _timer.Start();
-        _initialised = true; RefreshLanguage(); SetDisconnectedVisuals(); SetBusy(false);
+        _initialised = true; DarkModeBox.IsChecked = profiles.DarkMode; AutoReconnectBox.IsChecked = profiles.AutoReconnect; ApplyTheme(); RefreshComputers(); SubscribeNetworkEvents(); RefreshLanguage(); SetDisconnectedVisuals(); SetBusy(false);
         AddLog(L.T("ReadyLog"));
     }
 
@@ -84,7 +86,7 @@ public partial class MainWindow : Window
                 if (app.Path.Length > 0) {
                     var existing = Applications.FirstOrDefault(a => a.Path.Equals(app.Path, StringComparison.OrdinalIgnoreCase) && a.Name == app.Name);
                     if (existing is not null) { app.UseProxy = existing.UseProxy; Unhook(existing); Applications.Remove(existing); }
-                    else app.UseProxy = Applications.Any(a => a.UseProxy && a.Path.Equals(app.Path, StringComparison.OrdinalIgnoreCase));
+                    else app.UseProxy = Applications.Any(a => a.UseProxy && a.RoutePaths.Intersect(app.RoutePaths, StringComparer.OrdinalIgnoreCase).Any());
                 }
                 Hook(app); Applications.Add(app);
             }
@@ -110,7 +112,7 @@ public partial class MainWindow : Window
             await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
             SavePreview(Path.Combine(directory, "Main-" + language.Code + ".png"));
             if (language.Code is "ru" or "en" or "de" or "es") {
-                MainTabs.SelectedIndex = 2;
+                MainTabs.SelectedItem = HelpTab;
                 HelpScroll.ScrollToTop();
                 await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle);
                 SavePreview(Path.Combine(directory, "Help-" + language.Code + ".png"));
@@ -141,13 +143,13 @@ public partial class MainWindow : Window
             ProfilePicker.SelectedItem = _profiles.Selected; _settings = _profiles.SelectedSettings();
             HostBox.Text = _settings.Host; PortBox.Text = _settings.Port.ToString();
             UsernameBox.Text = _settings.Username; PasswordBox.Password = _settings.Password;
-            ProtocolBox.SelectedIndex = (int)_settings.Protocol; RememberBox.IsChecked = _settings.RememberPassword;
+            ModeBox.SelectedIndex = (int)_settings.Mode; LoadWorkFields(); ProtocolBox.SelectedIndex = (int)_settings.Protocol; RememberBox.IsChecked = _settings.RememberPassword;
             UdpBox.IsChecked = _profiles.EnableUdp; StoreBox.IsChecked = _profiles.ProxyStore;
             DeleteProfileButton.IsEnabled = Profiles.Count > 1;
-            foreach (var app in Applications) app.UseProxy = app.Path.Length > 0 && _profiles.ProxyApps.Contains(app.Path, StringComparer.OrdinalIgnoreCase);
+            foreach (var app in Applications) app.UseProxy = app.RoutePaths.Any(p => _profiles.ProxyApps.Contains(p, StringComparer.OrdinalIgnoreCase));
         }
         finally { _loading = false; }
-        if (_initialised) { UpdateProtocol(); UpdateSelectionSummary(); }
+        if (_initialised) { UpdateProtocol(); UpdateMode(); UpdateSelectionSummary(); }
     }
 
     private ProxyProfiles DraftProfiles(bool validate = false)
@@ -164,9 +166,10 @@ public partial class MainWindow : Window
     {
         if (!int.TryParse(PortBox.Text.Trim(), out var port)) throw new ArgumentException(L.T("InvalidPort"));
         var settings = new ProxySettings {
+            Mode = (ConnectionMode)Math.Max(0, ModeBox.SelectedIndex), WorkNetwork = ModeBox.SelectedIndex == 1 ? ReadWorkFields() : _settings.WorkNetwork?.Copy(),
             Host = HostBox.Text.Trim(), Port = port, Username = UsernameBox.Text, Password = PasswordBox.Password,
             Protocol = (ProxyProtocol)Math.Max(0, ProtocolBox.SelectedIndex), RememberPassword = RememberBox.IsChecked == true,
-            ProxyApps = Applications.Where(a => a.UseProxy && a.Path.Length > 0).Select(a => a.Path).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
+            ProxyApps = Applications.Where(a => a.UseProxy).SelectMany(a => a.RoutePaths).Distinct(StringComparer.OrdinalIgnoreCase).ToList(),
             ProxyStore = StoreBox.IsChecked == true, EnableUdp = UdpBox.IsChecked == true,
             Language = L.Current.Code, DefaultsInitialized = _profiles.DefaultsInitialized
         };
@@ -205,7 +208,7 @@ public partial class MainWindow : Window
     private void DeleteProfile_Click(object sender, RoutedEventArgs e)
     {
         if (_busy || _session is not null || Profiles.Count <= 1) return;
-        if (MessageBox.Show(this, L.F("DeleteProfileQuestion", _profiles.Selected.Name), "ProxyChoiceApp", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        if (MessageBox.Show(this, L.F("DeleteProfileQuestion", _profiles.Selected.Name), "ProxyChoicePro", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
         try { var next = DraftProfiles(); next.RemoveSelected(); CommitProfiles(next); ShowNotice(L.T("ProfileRemoved"), false); }
         catch (Exception error) { ReportError(error); }
     }
@@ -224,36 +227,43 @@ public partial class MainWindow : Window
     private void SetIndicator(bool healthy, string description)
     {
         _healthy = healthy;
-        var brush = new SolidColorBrush((Color)ColorConverter.ConvertFromString(healthy ? "#16A56B" : "#E05151"));
-        StatusDot.Fill = brush;
-        Icon = BitmapFrame.Create(new Uri($"pack://application:,,,/Assets/{(healthy ? "connected" : "disconnected")}.ico"));
-        var group = new DrawingGroup();
-        group.Children.Add(new GeometryDrawing(Brushes.White, null, new EllipseGeometry(new Point(8, 8), 8, 8)));
-        group.Children.Add(new GeometryDrawing(brush, null, new EllipseGeometry(new Point(8, 8), 6.3, 6.3)));
-        var overlay = new DrawingImage(group); overlay.Freeze();
-        TaskbarItemInfo.Overlay = overlay; TaskbarItemInfo.Description = "ProxyChoiceApp: " + description;
-        _tray.Icon = healthy ? _greenIcon : _redIcon; _tray.Text = ("ProxyChoiceApp · " + description)[..Math.Min(63, ("ProxyChoiceApp · " + description).Length)];
+        SetConnectionVisual(healthy ? ConnectionVisual.Connected : _reconnecting || (_wantConnection && _busy && _session is null) ? ConnectionVisual.Connecting : _session is not null ? ConnectionVisual.Error : ConnectionVisual.Disconnected, description);
     }
+
     private void SetBusy(bool busy)
     {
-        _busy = busy; ConnectButton.IsEnabled = TestButton.IsEnabled = ApplyButton.IsEnabled = !busy;
-        ProfileForm.IsEnabled = ProfileControls.IsEnabled = !busy && _session is null;
-        SaveProfileButton.IsEnabled = !busy && _session is null;
+        _busy = busy;
+        var canCancel = busy && _wantConnection && _operation is { IsCancellationRequested: false };
+        ConnectButton.IsEnabled = !_closing && (!busy || _reconnecting || canCancel);
+        TestButton.IsEnabled = DiagnoseButton.IsEnabled = !busy && !_reconnecting;
+        ApplyButton.IsEnabled = !busy && !_reconnecting && ModeBox.SelectedIndex != 1;
+        ProfileForm.IsEnabled = ProfileControls.IsEnabled = !busy && _session is null && !_wantConnection;
+        SaveProfileButton.IsEnabled = !busy && _session is null && !_wantConnection;
         ProfileHint.Text = L.T(_session is null ? "ProfileHint" : "ConnectedProfileHint");
-        ConnectButton.Content = L.T(busy ? "PleaseWait" : _session is null ? "Connect" : "Disconnect");
-        TestButton.Content = L.T(_session is null ? "TestProxy" : "CheckIp");
+        ConnectButton.Content = L.T(_reconnecting ? "CancelReconnect" : busy ? canCancel ? "Cancel" : "PleaseWait" : _session is null ? "Connect" : "Disconnect");
+        TestButton.Content = L.T(ModeBox.SelectedIndex == 1 ? "TestWork" : _session is null ? "TestProxy" : "CheckIp");
         ApplyButton.Content = L.T(_session is null ? "Apply" : "ApplyReconnect");
-        _trayDisconnect.Enabled = !busy && _session is not null;
+        _trayDisconnect.Enabled = _session is not null || _wantConnection;
     }
+
     private async void Connect_Click(object sender, RoutedEventArgs e)
     {
-        if (_busy) return;
+        if (_reconnecting) {
+            await CancelReconnectAsync(); return;
+        }
+        if (_busy) {
+            if (_wantConnection && _operation is { IsCancellationRequested: false } operation) {
+                _wantConnection = false; operation.Cancel(); SetBusy(true);
+            }
+            return;
+        }
         if (_session is null) await ConnectAsync();
         else { SetBusy(true); try { await DisconnectAsync(); } catch (Exception error) { ReportError(error); } finally { if (!_closing) SetBusy(false); } }
     }
     public async Task ConnectAsync()
     {
         if (_busy || _closing) return;
+
         SetBusy(true); using var operation = new CancellationTokenSource(); _operation = operation;
         try {
             var candidate = ReadSettings();
@@ -264,33 +274,81 @@ public partial class MainWindow : Window
                 if (Elevation.Restart(path)) { _allowClose = true; Close(); return; }
                 SecureStorage.Delete(path); ShowNotice(L.T("ElevationCanceled"), false); return;
             }
-            _settings = candidate; StatusTitle.Text = L.T("CheckingProxy"); StatusDescription.Text = L.T("PreflightHint");
-            SetIndicator(false, L.T("Connecting")); AddLog(L.T("PreflightHint"));
-            var ip = await ResolveServerAsync(candidate, operation.Token);
-            await using (var probe = await CoreSession.StartAsync(candidate, ip, false, operation.Token))
-                await probe.ReadProxyIpAsync(operation.Token);
-            operation.Token.ThrowIfCancellationRequested();
-            await StartTunnelAsync(candidate, ip, operation.Token); PersistSettings(candidate);
+            _settings = candidate; _wantConnection = true; SetBusy(true);
+            await ConnectCoreAsync(candidate, operation.Token); PersistSettings(candidate);
         }
         catch (OperationCanceledException) when (_closing) { }
-        catch (Exception error) { if (_session is not null) await DisconnectAsync(); SetDisconnectedVisuals(); ReportError(error); }
+        catch (OperationCanceledException) when (operation.IsCancellationRequested) { await DisconnectAsync(); }
+        catch (Exception error) { await DisconnectAsync(); SetDisconnectedVisuals(); SetConnectionVisual(ConnectionVisual.Error, L.T("Error"));
+            if (error is CoreStartupException) SetDiagnostic(0, "Unavailable", Sanitize(error.Message));
+            ReportError(error); }
         finally { if (ReferenceEquals(_operation, operation)) _operation = null; if (!_closing) SetBusy(false); }
+    }
+    private async Task ConnectCoreAsync(ProxySettings settings, CancellationToken token)
+    {
+        _settings = settings;
+        ResetDiagnostics();
+        StatusTitle.Text = L.T(settings.Mode == ConnectionMode.WorkNetwork ? "CheckingWork" : "CheckingProxy");
+        StatusDescription.Text = L.T(settings.Mode == ConnectionMode.WorkNetwork ? "WorkPreflightHint" : "PreflightHint");
+        SetConnectionVisual(ConnectionVisual.Connecting, L.T("Connecting")); AddLog(StatusDescription.Text);
+        var ip = await ResolveServerAsync(settings, token);
+        await using (var probe = await CoreSession.StartAsync(settings, ip, false, token)) {
+            SetDiagnostic(0, "Available", L.T("EngineReady"));
+            if (settings.Mode == ConnectionMode.WorkNetwork) await VerifyWorkAccessAsync(probe, settings, false, token);
+            else await probe.ReadProxyIpAsync(token);
+        }
+        AddLog(L.T("PreflightPassedLog"));
+        token.ThrowIfCancellationRequested();
+        await StartTunnelAsync(settings, ip, token);
     }
     private async Task StartTunnelAsync(ProxySettings settings, string ip, CancellationToken token)
     {
-        _serverIp = ip; _session = await CoreSession.StartAsync(settings, ip, true, token);
+        AddLog(L.T("TunnelStartingLog"));
+        _serverIp = ip; _session = await CoreSession.StartAsync(settings, ip, true, token, AddLog);
+        SetDiagnostic(0, "Available", L.T("EngineTunnelReady"));
+        AddLog(L.T("EngineTunnelReady"));
         _connection = new CancellationTokenSource();
-        var external = await _session.ReadProxyIpAsync(token);
+        string external;
+        if (settings.Mode == ConnectionMode.WorkNetwork) {
+            await VerifyWorkAccessAsync(_session, settings, true, token);
+            external = string.Join(", ", settings.WorkNetwork!.Addresses);
+        } else external = await _session.ReadProxyIpAsync(token);
         token.ThrowIfCancellationRequested();
-        _connectedAt = _lastHealthAt = DateTime.UtcNow;
+        _connectedAt = _lastHealthAt = DateTime.UtcNow; _healthFailures = 0;
         _traffic.Reset(); _traffic.Sample(new(0, 0, 0), TimeSpan.Zero); _trafficClock.Restart(); UpdateTrafficText();
         ProxyIpText.Text = external; DurationText.Text = L.F("ConnectedDuration", "00:00:00");
-        StatusTitle.Text = L.T("Connected"); StatusDescription.Text = L.T("ConnectedHint");
+        StatusTitle.Text = L.T("Connected"); StatusDescription.Text = L.T(settings.Mode == ConnectionMode.WorkNetwork ? "WorkConnectedHint" : "ConnectedHint");
         Notice.Visibility = Visibility.Collapsed; SetIndicator(true, L.T("Connected"));
-        AddLog(L.F("ConnectedLog", external)); AddLog(L.F("DirectDnsLog", _session.DirectDnsServer));
+        if (_session.UsesIpv4Only) ShowNotice(L.T("Ipv4TunnelHint"), false);
+        AddLog(L.F("ConnectedLog", external));
+        if (settings.Mode == ConnectionMode.WorkNetwork) ShowSubnetConflicts(settings.WorkNetwork!);
+        else AddLog(L.F("DirectDnsLog", _session.DirectDnsServer));
     }
-    private async Task DisconnectAsync()
+    private async Task VerifyWorkAccessAsync(CoreSession session, ProxySettings settings, bool afterTunnel, CancellationToken token)
     {
+        var work = settings.WorkNetwork!;
+        if (afterTunnel) {
+            StatusTitle.Text = L.T("CheckingWork");
+            StatusDescription.Text = L.F("WorkTunnelChecking", work.ProbeHost, work.ProbePort);
+            AddLog(StatusDescription.Text);
+        }
+        try {
+            // A fresh WireGuard peer may need more than one handshake after recreating the adapter.
+            await session.ProbeTcpAsync(work.ProbeHost, work.ProbePort, token,
+                TimeSpan.FromSeconds(afterTunnel ? 25 : 10));
+            SetDiagnostic(1, "Available", L.F("WorkNetworkAvailable", work.ProbeHost, work.ProbePort));
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
+        catch (Exception error) {
+            SetDiagnostic(1, "Unavailable", Sanitize(error.Message));
+            // Preserve diagnostics before DisconnectAsync removes the private session files.
+            AddLog(L.T("WorkProbeEngineLog") + "\n" + session.ReadStartupFailure());
+            throw;
+        }
+    }
+    private async Task DisconnectAsync(bool preserveIntent = false)
+    {
+        if (!preserveIntent) { _wantConnection = false; _retryCancellation?.Cancel(); }
         var session = _session; _session = null; _serverIp = null;
         _connection?.Cancel(); _connection?.Dispose(); _connection = null;
         if (session is not null) {
@@ -299,6 +357,7 @@ public partial class MainWindow : Window
         }
         SetDisconnectedVisuals(); AddLog(L.T("DisconnectedLog"));
     }
+
     private void SetDisconnectedVisuals()
     {
         SetIndicator(false, L.T("Disconnected")); StatusTitle.Text = L.T("Disconnected"); StatusDescription.Text = L.T("DisconnectedHint");
@@ -306,6 +365,7 @@ public partial class MainWindow : Window
     }
     private async void Test_Click(object sender, RoutedEventArgs e)
     {
+        if (ModeBox.SelectedIndex == 1) { await DiagnoseAsync(); return; }
         if (_busy || _closing) return;
         SetBusy(true); using var operation = new CancellationTokenSource(); _operation = operation;
         try {
@@ -347,7 +407,7 @@ public partial class MainWindow : Window
         try {
             if (session.HasExited) {
                 AddLog(L.T("CoreStopped") + " " + session.ReadLogTail()); SetBusy(true);
-                await DisconnectAsync(); ShowNotice(L.T("TunnelStoppedHint"), true); SetBusy(false); return;
+                await DisconnectAsync(preserveIntent: _profiles.AutoReconnect); ShowNotice(L.T("TunnelStoppedHint"), true); SetBusy(false); RequestReconnect(L.T("CoreStopped")); return;
             }
             var age = DateTime.UtcNow - _connectedAt; DurationText.Text = L.F("ConnectedDuration", $"{(int)age.TotalHours:00}:{age.Minutes:00}:{age.Seconds:00}");
             try {
@@ -359,7 +419,7 @@ public partial class MainWindow : Window
             if (ReferenceEquals(session, _session) && DateTime.UtcNow - _lastHealthAt > TimeSpan.FromSeconds(30) && (_healthTask is null || _healthTask.IsCompleted)) {
                 _lastHealthAt = DateTime.UtcNow; _healthTask = CheckHealthAsync(session, _connection!.Token);
             }
-            if (MainTabs.SelectedIndex == 1) UpdateLogDisplay();
+            if (MainTabs.SelectedItem == LogTab) UpdateLogDisplay();
         }
         catch (Exception error) { if (!_closing) AddLog(error.Message); }
         finally { _tickRunning = false; }
@@ -367,15 +427,25 @@ public partial class MainWindow : Window
     private async Task CheckHealthAsync(CoreSession session, CancellationToken token)
     {
         try {
-            var ip = await session.ReadProxyIpAsync(token);
+            string ip;
+            if (_settings.Mode == ConnectionMode.WorkNetwork) {
+                await session.ProbeTcpAsync(_settings.WorkNetwork!.ProbeHost, _settings.WorkNetwork.ProbePort, token);
+                ip = string.Join(", ", _settings.WorkNetwork.Addresses);
+            } else ip = await session.ReadProxyIpAsync(token);
             if (ReferenceEquals(session, _session) && !_closing) {
-                ProxyIpText.Text = ip;
-                if (!_healthy) { SetIndicator(true, L.T("Connected")); StatusTitle.Text = L.T("Connected"); StatusDescription.Text = L.T("ConnectedHint"); AddLog(L.T("RestoredLog")); }
+                _healthFailures = 0; ProxyIpText.Text = ip;
+                if (!_healthy) { SetIndicator(true, L.T("Connected")); StatusTitle.Text = L.T("Connected"); StatusDescription.Text = L.T(_settings.Mode == ConnectionMode.WorkNetwork ? "WorkConnectedHint" : "ConnectedHint"); AddLog(L.T("RestoredLog")); }
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
-        catch (Exception) { if (ReferenceEquals(session, _session) && !_closing && _healthy) { MarkUnhealthy(); AddLog(L.T("HealthFailed")); } }
+        catch (Exception) {
+            if (ReferenceEquals(session, _session) && !_closing) {
+                if (_healthy) { MarkUnhealthy(); AddLog(L.T("HealthFailed")); }
+                if (++_healthFailures >= 2) RequestReconnect(L.T("HealthFailed"));
+            }
+        }
     }
+
     private void MarkUnhealthy()
     {
         SetIndicator(false, L.T("NoAccess")); StatusTitle.Text = L.T("NoAccess"); StatusDescription.Text = L.T("NoAccessHint");
@@ -395,7 +465,7 @@ public partial class MainWindow : Window
     {
         if (e.PropertyName != nameof(AppChoice.UseProxy) || _syncing || sender is not AppChoice app) return;
         _syncing = true;
-        try { foreach (var alias in Applications.Where(a => a != app && a.Path.Length > 0 && a.Path.Equals(app.Path, StringComparison.OrdinalIgnoreCase))) alias.UseProxy = app.UseProxy; }
+        try { foreach (var alias in Applications.Where(a => a != app && a.RoutePaths.Intersect(app.RoutePaths, StringComparer.OrdinalIgnoreCase).Any())) alias.UseProxy = app.UseProxy; }
         finally { _syncing = false; }
         UpdateSelectionSummary();
     }
@@ -444,7 +514,7 @@ public partial class MainWindow : Window
             if (_session is not null) {
                 settings.Validate();
                 var ip = _serverIp ?? throw new IOException(L.T("ResolveError"));
-                await DisconnectAsync(); operation.Token.ThrowIfCancellationRequested();
+                await DisconnectAsync(preserveIntent: true); operation.Token.ThrowIfCancellationRequested();
                 await StartTunnelAsync(settings, ip, operation.Token);
                 ShowNotice(L.T("RulesApplied"), false);
             } else ShowNotice(L.T("RulesSaved"), false);
@@ -473,17 +543,19 @@ public partial class MainWindow : Window
         HelpSections.ItemsSource = L.Current.Help;
         foreach (var app in Applications) app.RefreshLanguage();
         _trayOpen.Text = L.T("OpenApp"); _trayDisconnect.Text = L.T("Disconnect"); _trayExit.Text = L.T("Exit");
-        FooterMode.Text = L.T(_preview ? "PreviewFooter" : "Footer"); UpdateProtocol(); UpdateSelectionSummary(); UpdateTrafficText();
+        ResetDiagnostics(); UpdateMode(); UpdateProtocol(); UpdateSelectionSummary(); UpdateTrafficText();
+        if (_reconnecting) { StatusTitle.Text = L.T("Reconnecting"); SetConnectionVisual(ConnectionVisual.Connecting, L.T("Reconnecting")); SetBusy(_busy); return; }
         if (_session is null) SetDisconnectedVisuals();
-        else { SetIndicator(_healthy, L.T(_healthy ? "Connected" : "NoAccess")); StatusTitle.Text = L.T(_healthy ? "Connected" : "NoAccess"); StatusDescription.Text = L.T(_healthy ? "ConnectedHint" : "NoAccessHint"); }
+        else { SetIndicator(_healthy, L.T(_healthy ? "Connected" : "NoAccess")); StatusTitle.Text = L.T(_healthy ? "Connected" : "NoAccess"); StatusDescription.Text = L.T(_healthy ? _settings.Mode == ConnectionMode.WorkNetwork ? "WorkConnectedHint" : "ConnectedHint" : "NoAccessHint"); }
         SetBusy(_busy);
     }
     private void Tabs_Changed(object sender, SelectionChangedEventArgs e)
-    { if (_initialised && e.Source == MainTabs && MainTabs.SelectedIndex == 1) UpdateLogDisplay(); }
+    { if (_initialised && e.Source == MainTabs && MainTabs.SelectedItem == LogTab) UpdateLogDisplay(); }
     public void ShowNotice(string text, bool error)
     {
-        NoticeText.Text = Sanitize(text); Notice.Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString(error ? "#FFF1EE" : "#EAF6F1"));
-        NoticeText.Foreground = new SolidColorBrush((Color)ColorConverter.ConvertFromString(error ? "#A74537" : "#18785C")); Notice.Visibility = Visibility.Visible;
+        _noticeError = error; NoticeText.Text = Sanitize(text);
+        Notice.Background = (Brush)FindResource(error ? "ErrorSurface" : "AccentSoft");
+        NoticeText.Foreground = (Brush)FindResource(error ? "ErrorInk" : "Ink"); Notice.Visibility = Visibility.Visible;
     }
     private void DismissNotice_Click(object sender, RoutedEventArgs e) => Notice.Visibility = Visibility.Collapsed;
     private void ReportError(Exception error)
@@ -494,7 +566,8 @@ public partial class MainWindow : Window
     private string Sanitize(string text)
     {
         foreach (var secret in _profiles.Profiles.SelectMany(p => new[] { p.Settings.Password, p.Settings.Username })
-            .Concat(new[] { _settings.Password, PasswordBox.Password, _settings.Username, UsernameBox.Text }).Where(s => !string.IsNullOrEmpty(s)).Distinct())
+            .Concat(_profiles.Profiles.SelectMany(p => new[] { p.Settings.WorkNetwork?.PrivateKey ?? "", p.Settings.WorkNetwork?.PreSharedKey ?? "" }))
+            .Concat(new[] { _settings.WorkNetwork?.PrivateKey ?? "", _settings.WorkNetwork?.PreSharedKey ?? "", _settings.Password, PasswordBox.Password, _settings.Username, UsernameBox.Text }).Where(s => !string.IsNullOrEmpty(s)).Distinct())
             text = text.Replace(secret, "••••", StringComparison.Ordinal);
         return text;
     }
@@ -512,7 +585,7 @@ public partial class MainWindow : Window
     }
     private void ExportLog_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new SaveFileDialog { Filter = L.T("LogFilter"), FileName = "ProxyChoiceApp-log-" + DateTime.Now.ToString("yyyy-MM-dd") + ".txt" };
+        var dialog = new SaveFileDialog { Filter = L.T("LogFilter"), FileName = "ProxyChoicePro-log-" + DateTime.Now.ToString("yyyy-MM-dd") + ".txt" };
         if (dialog.ShowDialog(this) != true) return;
         try { File.WriteAllText(dialog.FileName, CurrentLog(), Encoding.UTF8); ShowNotice(L.T("LogSaved"), false); }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException) { ReportError(error); }
@@ -522,7 +595,7 @@ public partial class MainWindow : Window
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("ProxyChoiceApp.notices.txt")!;
         using var reader = new StreamReader(stream);
         var text = new TextBox { Text = reader.ReadToEnd(), IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(20), Background = Brushes.White, FontSize = 14 };
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(20), Background = (Brush)FindResource("Surface"), Foreground = (Brush)FindResource("Ink"), FontSize = 14 };
         new Window { Title = L.T("ComponentLicenses"), Owner = this, Width = 740, Height = 540, ShowInTaskbar = false, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = text }.ShowDialog();
     }
     private void Contact_Click(object sender, RequestNavigateEventArgs e)
@@ -536,11 +609,12 @@ public partial class MainWindow : Window
     {
         if (_allowClose) { CleanupUi(); return; }
         e.Cancel = true; if (_closing) return;
-        _closing = true; _timer.Stop(); _discovery.Cancel(); _operation?.Cancel(); _connection?.Cancel(); SetBusy(true);
+        _closing = true; _wantConnection = false; _timer.Stop(); _discovery.Cancel(); _retryCancellation?.Cancel(); _operation?.Cancel(); _connection?.Cancel(); SetBusy(true);
         try {
             // All core operations have their own deadlines. Never wait indefinitely on a UI flag.
             var deadline = Stopwatch.StartNew();
             while ((_operation is not null || _tickRunning) && deadline.Elapsed < TimeSpan.FromSeconds(20)) await Task.Delay(50);
+            if (_reconnectTask is not null) await _reconnectTask;
             await DisconnectAsync();
             if (_healthTask is not null) { try { await _healthTask.WaitAsync(TimeSpan.FromSeconds(3)); } catch (TimeoutException) { } }
             if (!_preview) {
@@ -549,8 +623,8 @@ public partial class MainWindow : Window
             }
         }
         catch (Exception error) { AddLog(error.Message); }
-        finally { _allowClose = true; Close(); }
+        finally { _allowClose = true; _ = Dispatcher.BeginInvoke(new Action(Close)); }
     }
     private void CleanupUi()
-    { _timer.Stop(); _discovery.Cancel(); _tray.Visible = false; _tray.Dispose(); _redIcon.Dispose(); _greenIcon.Dispose(); }
+    { _timer.Stop(); _discovery.Cancel(); _tray.Visible = false; _tray.Dispose(); _redIcon.Dispose(); _greenIcon.Dispose(); _grayIcon.Dispose(); _amberIcon.Dispose(); UnsubscribeNetworkEvents(); }
 }

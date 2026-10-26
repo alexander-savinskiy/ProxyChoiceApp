@@ -22,6 +22,7 @@ try {
     $env:NUGET_SCRATCH = Join-Path $workspace '.tools\nuget-scratch'
     $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
     $env:DOTNET_GENERATE_ASPNET_CERTIFICATE = 'false'
+    & (Join-Path $PSScriptRoot 'Test-PublicPackage.ps1') -SourceDirectory $workspace -ReportPath (Join-Path $workspace 'artifacts\privacy-source.json')
     if (-not (Test-Path -LiteralPath 'vendor\singbox.zip')) {
         New-Item -ItemType Directory -Path 'vendor' -Force | Out-Null
         Invoke-WebRequest -Uri 'https://github.com/SagerNet/sing-box/releases/download/v1.14.3/sing-box-1.14.3-windows-amd64.zip' -OutFile 'vendor\singbox.zip'

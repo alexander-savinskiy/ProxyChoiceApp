@@ -6,14 +6,14 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>ProxyChoiceApp</AssemblyName>
+    <AssemblyName>ProxyChoicePro</AssemblyName>
     <RootNamespace>ProxyChoiceApp</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
-    <Version>1.0.0</Version>
-    <Description>Per-application proxy routing for Windows</Description>
+    <Version>1.1.3</Version>
+    <Description>Application proxies and work network VPN for Windows</Description>
     <Authors>Alexander Savinskiy</Authors>
-    <Copyright>© 2026 Alexander Savinskiy · A.savinskiy@gmai.com</Copyright>
+    <Copyright>© 2026 Alexander Savinskiy · a.savinskiy@gmail.com</Copyright>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -26,6 +26,7 @@
     <Resource Include="Assets/*.ico" />
     <Resource Include="Assets/Flags/*.png" />
     <EmbeddedResource Include="Localization/*.json" />
+    <EmbeddedResource Include="../../docs/work-client.example.conf" LogicalName="ProxyChoiceApp.import-template.conf" />
     <EmbeddedResource Include="../../vendor/singbox.zip" LogicalName="ProxyChoiceApp.engine.zip" />
     <EmbeddedResource Include="../../THIRD-PARTY-NOTICES.txt" LogicalName="ProxyChoiceApp.notices.txt" />
     <EmbeddedResource Include="../../vendor/engine-manifest.json" LogicalName="ProxyChoiceApp.engine-manifest.json" />

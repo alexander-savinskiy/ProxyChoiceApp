@@ -22,7 +22,8 @@ function Write-ProxyIcon([string]$Name, [string]$Hex) {
         $path.AddBezier(32,60,19,55,8,46,8,36)
         $path.CloseFigure()
         $graphics.FillPath($brush,$path)
-        $pen = [System.Drawing.Pen]::new([System.Drawing.Color]::White,4.5)
+        $graphics.CompositingMode = [System.Drawing.Drawing2D.CompositingMode]::SourceCopy
+        $pen = [System.Drawing.Pen]::new([System.Drawing.Color]::Transparent,4.5)
         $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
         $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
         $pen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
@@ -49,7 +50,9 @@ function Write-ProxyIcon([string]$Name, [string]$Hex) {
     $writer.Dispose(); $file.Dispose()
 }
 
-Write-ProxyIcon 'disconnected' '#E05151'
+Write-ProxyIcon 'disconnected' '#7F91A5'
+Write-ProxyIcon 'error' '#E05151'
+Write-ProxyIcon 'connecting' '#D49A26'
 Write-ProxyIcon 'connected' '#16A56B'
 Copy-Item -LiteralPath (Join-Path $assets 'disconnected.ico') -Destination (Join-Path $assets 'app.ico') -Force
 

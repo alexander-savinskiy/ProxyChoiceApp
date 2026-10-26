@@ -32,7 +32,7 @@ public partial class App : Application
                 try { using var parent = Process.GetProcessById(pid); using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(12)); await parent.WaitForExitAsync(limit.Token); }
                 catch (ArgumentException) { }
             }
-            _mutex = new Mutex(false, "Local\\ProxyChoiceApp-" + WindowsIdentity.GetCurrent().User!.Value + (preview ? "-preview" : ""));
+            _mutex = new Mutex(false, "Local\\ProxyChoicePro-" + WindowsIdentity.GetCurrent().User!.Value + (preview ? "-preview" : ""));
             var deadline = DateTime.UtcNow.AddSeconds(5);
             do
             {
@@ -42,7 +42,7 @@ public partial class App : Application
             } while (DateTime.UtcNow < deadline);
             if (!_ownsMutex)
             {
-                MessageBox.Show(L.T("AlreadyRunning"), "ProxyChoiceApp", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(L.T("AlreadyRunning"), "ProxyChoicePro", MessageBoxButton.OK, MessageBoxImage.Information);
                 Shutdown(); return;
             }
             ProxyProfiles profiles;
@@ -66,7 +66,7 @@ public partial class App : Application
             MainWindow = window;
             window.Show();
             if (captureIndex >= 0 && captureIndex + 1 < e.Args.Length) {
-                await window.CapturePreviewsAsync(Path.GetFullPath(e.Args[captureIndex + 1]));
+                await window.CaptureProPreviewsAsync(Path.GetFullPath(e.Args[captureIndex + 1]));
                 window.Close(); return;
             }
             if (loadError is not null) window.ShowNotice(loadError, true);
@@ -74,7 +74,7 @@ public partial class App : Application
         }
         catch (Exception error)
         {
-            MessageBox.Show(L.T("StartupError") + " " + error.Message, "ProxyChoiceApp", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(L.T("StartupError") + " " + error.Message, "ProxyChoicePro", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
     }

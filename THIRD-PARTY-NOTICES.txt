@@ -1,16 +1,16 @@
-ProxyChoiceApp 1.0.0
-Copyright (C) 2026 Alexander Savinskiy <A.savinskiy@gmai.com>
+ProxyChoicePro 1.1.2
+Copyright (C) 2026 Alexander Savinskiy <a.savinskiy@gmail.com>
 
-ProxyChoiceApp is an independent application, not affiliated with or endorsed by SagerNet.
-Source code for ProxyChoiceApp is supplied alongside the executable.
-ProxyChoiceApp source license: GNU GPL version 3 or later. See LICENSE.txt.
+ProxyChoicePro is an independent application, not affiliated with or endorsed by SagerNet.
+Source code for ProxyChoicePro is supplied alongside the executable.
+ProxyChoicePro source license: GNU GPL version 3 or later. See LICENSE.txt.
 
 Network engine: sing-box 1.14.3
 Copyright (C) 2022 nekohasekai <contact-sagernet@sekai.icu>
 License: GPL-3.0-or-later, with the upstream naming/association restriction.
 Upstream: https://github.com/SagerNet/sing-box
 Exact source: https://github.com/SagerNet/sing-box/tree/v1.14.3
-Source archive is supplied in the release's source package (upstream-source).
+Source archive is supplied in the release's source package (vendor/upstream-source).
 Release: https://github.com/SagerNet/sing-box/releases/tag/v1.14.3
 Original ZIP SHA-256: d8b86ef58936dba9230ec6a57ffa4243933f3c14ef4809828b6c553440ed1518
 The engine is unmodified and is executed as a separate process.
@@ -26,6 +26,6 @@ Runtime license and third-party notices are supplied in the release.
 
 Runtime network services (no analytics):
 Public IP check: https://api.ipify.org or https://checkip.amazonaws.com
-DNS: Cloudflare DNS-over-HTTPS, https://1.1.1.1/dns-query.
-Ordinary DNS uses the proxy; direct connections resolve through the active adapter's DNS or direct DoH.
+DNS: Cloudflare DNS-over-HTTPS, https://1.1.2.1/dns-query.
+In Proxy mode, ordinary DNS uses the proxy; direct connections resolve through the active adapter's DNS or direct DoH. Work mode retains Windows DNS and does not use public IP checks.
 The proxy hostname is resolved using Windows DNS before the tunnel starts.

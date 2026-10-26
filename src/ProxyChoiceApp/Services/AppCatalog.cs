@@ -15,16 +15,7 @@ public static class AppCatalog
     public static IReadOnlyList<AppChoice> Discover(CancellationToken token = default)
     {
         var running = RunningApps.Discover(token).Apps;
-        var apps = new List<AppChoice>();
-        foreach (var exe in new[] { "chrome.exe", "msedge.exe" })
-        {
-            token.ThrowIfCancellationRequested();
-            var paths = FindPaths(exe).Concat(running.Where(a => System.IO.Path.GetFileName(a.Path).Equals(exe, StringComparison.OrdinalIgnoreCase)).Select(a => a.Path))
-                .Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            var name = exe == "chrome.exe" ? "Google Chrome" : "Microsoft Edge";
-            if (paths.Length == 0) apps.Add(new(name, "", false, true));
-            else foreach (var path in paths) apps.Add(new(name, path, builtIn: true));
-        }
+        var apps = DiscoverKnown(running, FindPaths).ToList();
         foreach (var path in FindPaths("YouTube.exe").Concat(running.Where(a => System.IO.Path.GetFileName(a.Path).Equals("YouTube.exe", StringComparison.OrdinalIgnoreCase)).Select(a => a.Path))
             .Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase))
             apps.Add(new("YouTube", path, builtIn: true, youtube: true));
@@ -57,6 +48,28 @@ public static class AppCatalog
         return apps;
     }
 
+    internal static IReadOnlyList<AppChoice> DiscoverKnown(IEnumerable<AppEntry> running, Func<string, IEnumerable<string>> lookup)
+    {
+        var processes = running.ToArray(); var apps = new List<AppChoice>();
+        string[] Paths(string exe) => lookup(exe).Concat(processes.Where(a => Path.GetFileName(a.Path).Equals(exe, StringComparison.OrdinalIgnoreCase)).Select(a => a.Path))
+            .Where(File.Exists).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var chats = Paths("ChatGPT.exe"); var codex = Paths("codex.exe").Concat(Paths("CodexDesktop.exe")).ToArray();
+        var codexRoutes = codex.Concat(Paths("codex-code-mode-host.exe")).Concat(chats.Where(p => p.Contains("OpenAI.Codex_", StringComparison.OrdinalIgnoreCase))).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        foreach (var (exe, name, required) in new[] {
+            ("chrome.exe", "Google Chrome", true), ("msedge.exe", "Microsoft Edge", true),
+            ("ChatGPT.exe", "ChatGPT", true), ("codex.exe", "Codex", true),
+            ("codex-computer-use-swift.exe", "codex-computer-use-swift", true),
+            ("firefox.exe", "Mozilla Firefox", false), ("opera.exe", "Opera", false),
+            ("brave.exe", "Brave", false), ("browser.exe", "Yandex Browser", false) }) {
+            var paths = exe == "codex.exe" ? codexRoutes : Paths(exe);
+            if (exe == "codex-computer-use-swift.exe") paths = paths.Concat(Paths("codex-compuer-use-swift.exe")).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            if (paths.Length == 0) { if (required) apps.Add(new(name, "", false, true)); }
+            else if (exe == "codex.exe") apps.Add(new(name, codex.FirstOrDefault() ?? paths[0], builtIn: true, routePaths: paths));
+            else foreach (var path in paths) apps.Add(new(name, path, builtIn: true));
+        }
+        return apps;
+    }
+
     private static IEnumerable<string> FindPaths(string exe)
     {
         var result = new List<string>();
@@ -76,6 +89,34 @@ public static class AppCatalog
             var prefix = Environment.GetFolderPath(folder);
             if (exe == "chrome.exe") result.Add(System.IO.Path.Combine(prefix, "Google", "Chrome", "Application", exe));
             if (exe == "msedge.exe") result.Add(System.IO.Path.Combine(prefix, "Microsoft", "Edge", "Application", exe));
+            if (exe == "firefox.exe") result.Add(Path.Combine(prefix, "Mozilla Firefox", exe));
+            if (exe == "brave.exe") result.Add(Path.Combine(prefix, "BraveSoftware", "Brave-Browser", "Application", exe));
+            if (exe == "browser.exe") result.Add(Path.Combine(prefix, "Yandex", "YandexBrowser", "Application", exe));
+            if (exe == "opera.exe") result.Add(Path.Combine(prefix, "Programs", "Opera", exe));
+            if (exe == "ChatGPT.exe") result.Add(Path.Combine(prefix, "Programs", "ChatGPT", exe));
+        }
+        if (exe.Equals("ChatGPT.exe", StringComparison.OrdinalIgnoreCase) || exe.Equals("CodexDesktop.exe", StringComparison.OrdinalIgnoreCase)) {
+            try {
+                using var packages = Registry.CurrentUser.OpenSubKey(@"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages");
+                if (packages is not null) foreach (var name in packages.GetSubKeyNames().Where(n => n.StartsWith("OpenAI.", StringComparison.OrdinalIgnoreCase))) {
+                    using var package = packages.OpenSubKey(name);
+                    if (package?.GetValue("PackageRootFolder") is string folder) {
+                        result.Add(Path.Combine(folder, "app", exe)); result.Add(Path.Combine(folder, exe));
+                    }
+                }
+            } catch (UnauthorizedAccessException) { } catch (System.Security.SecurityException) { }
+        }
+        if (exe.StartsWith("codex", StringComparison.OrdinalIgnoreCase)) {
+            var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OpenAI", "Codex");
+            var binaries = Path.Combine(cache, "bin");
+            try {
+                if (Directory.Exists(binaries)) foreach (var version in Directory.EnumerateDirectories(binaries)) result.Add(Path.Combine(version, exe));
+                var runtimes = Path.Combine(cache, "runtimes", "cua_node");
+                if (Directory.Exists(runtimes)) foreach (var version in Directory.EnumerateDirectories(runtimes)) {
+                    result.Add(Path.Combine(version, "bin", exe));
+                    result.Add(Path.Combine(version, "bin", "node_modules", "@oai", "sky", "bin", "windows", "swift", "x64", exe));
+                }
+            } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
         return result;
     }

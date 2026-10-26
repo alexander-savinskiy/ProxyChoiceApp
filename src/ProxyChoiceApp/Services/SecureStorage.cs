@@ -13,7 +13,7 @@ namespace ProxyChoiceApp.Services;
 public static class SecureStorage
 {
     internal static string? RootOverride { get; set; }
-    public static string Root => RootOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProxyChoiceApp");
+    public static string Root => RootOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProxyChoicePro");
     public static string SettingsPath => Path.Combine(Root, "profile.dat");
     public static string ProfilesPath => Path.Combine(Root, "profiles.dat");
     private static readonly byte[] Entropy = "ProxyChoiceApp.settings.v1"u8.ToArray();
@@ -54,6 +54,10 @@ public static class SecureStorage
     {
         if (path is null && !File.Exists(ProfilesPath))
         {
+            var priorApp = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProxyChoiceApp", "profiles.dat");
+            if (RootOverride is null && File.Exists(priorApp)) {
+                var migrated = LoadProfiles(priorApp); SaveProfiles(migrated); return migrated;
+            }
             var oldPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ProxyFlow", "profiles.dat");
             if (RootOverride is null && File.Exists(oldPath))
             {

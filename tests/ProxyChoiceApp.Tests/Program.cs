@@ -17,7 +17,7 @@ using ProxyChoiceApp.Localization;
 
 namespace ProxyChoiceApp.Tests;
 
-internal static class Program
+internal static partial class Program
 {
     private static int _checks;
     private static string _root = "";
@@ -28,6 +28,10 @@ internal static class Program
 
     private static async Task<int> Main(string[] args)
     {
+        if (args.Length == 3 && args[0] == "--probe-work") return await ProbePersonalWork(args[1], args[2]);
+        if (args.Length > 0 && args[0] == "--list-apps") {
+            Console.WriteLine(JsonSerializer.Serialize(AppCatalog.Discover().Select(a => new { a.Name, a.Path, a.Available, a.RoutePaths }))); return 0;
+        }
         if (args.Length > 0 && args[0] == "--list-browsers")
         {
             var snapshot = RunningApps.Discover();
@@ -36,21 +40,37 @@ internal static class Program
             return 0;
         }
         // Isolated child fixtures exercise timeouts and crash cleanup without changing Windows routes.
+        if (args.Length > 0 && args[0] == "--crash-core")
+        {
+            Console.OutputEncoding = new UTF8Encoding(false);
+            Console.WriteLine("early stdout diagnostic");
+            Console.Error.WriteLine("early stderr diagnostic: ошибка до открытия журнала");
+            return 23;
+        }
+        if (args.Length > 0 && args[0] == "--cooperative-core")
+        {
+            var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Console.CancelKeyPress += (_, e) => { e.Cancel = true; stopped.TrySetResult(); };
+            Console.WriteLine("cooperative core ready");
+            await stopped.Task;
+            Console.Error.WriteLine("cooperative core stopped");
+            return 0;
+        }
         if (args.Length > 0 && args[0] == "--stall-core")
         {
             Console.CancelKeyPress += (_, e) => e.Cancel = true;
-            if (args.Length > 1) File.WriteAllText(args[1], Environment.ProcessId.ToString());
+            if (args.Length > 1) PublishFixtureReady(args[1], Environment.ProcessId);
             await Task.Delay(Timeout.Infinite); return 0;
         }
         if (args.Length > 1 && args[0] == "--job-parent")
         {
             await using var child = new NativeCore(Environment.ProcessPath!, new[] { "--stall-core", args[1] + ".child" });
-            File.WriteAllText(args[1], child.ProcessId.ToString());
+            PublishFixtureReady(args[1], child.ProcessId);
             await Task.Delay(Timeout.Infinite); return 0;
         }
         if (args.Length == 3 && args[0] == "check")
         {
-            File.WriteAllText(args[2] + ".pid", Environment.ProcessId.ToString());
+            PublishFixtureReady(args[2] + ".pid", Environment.ProcessId);
             await Task.Delay(Timeout.Infinite); return 0;
         }
         _root = Path.GetFullPath(args.Length > 0 ? args[0] : Path.Combine(AppContext.BaseDirectory, "test-artifacts"));
@@ -63,11 +83,20 @@ internal static class Program
             TestStorage();
             TestProfiles();
             TestTraffic();
+            TestWorkProfiles();
+            TestPublicPrivacyDefaults();
+            TestKnownApplications();
             Assert(string.Equals(RunningApps.ReadPath(Environment.ProcessId), Environment.ProcessPath, StringComparison.OrdinalIgnoreCase),
                 "native Windows image-name lookup returns the real process path without reading modules");
             var exe = await EnginePackage.EnsureAsync();
             Assert(File.Exists(exe), "bundled engine extraction and SHA-256 verification");
             await CheckConfigurations(exe);
+            await CheckWorkConfigurations(exe);
+            await CheckIpv4Compatibility(exe);
+            await CheckWorkTransportRoutes(exe);
+            await CheckWorkProbeDeadlines();
+            await CheckConnectionRecovery();
+            await RealWireGuardTraffic(exe);
             foreach (var protocol in new[] { ProxyProtocol.Socks5, ProxyProtocol.Http })
             {
                 await AuthenticatedProxy(protocol);
@@ -82,6 +111,7 @@ internal static class Program
             await StoreRouting(exe, false);
             await StoreRouting(exe, true);
             await CheckProcessLifecycle();
+            await CheckStartupCapture(exe);
             await RepeatedSessions();
             await CancelledSession();
             Assert(!Directory.EnumerateFiles(SecureStorage.Root, "core.json", System.IO.SearchOption.AllDirectories).Any(), "temporary plaintext configs removed after all sessions");
@@ -90,6 +120,14 @@ internal static class Program
             return 0;
         }
         catch (Exception error) { Console.Error.WriteLine(error); File.WriteAllText(Path.Combine(_root, "failure.txt"), error.ToString()); return 1; }
+    }
+
+    private static void PublishFixtureReady(string path, int pid)
+    {
+        // Publish the signal only after closing its writer; File.Exists alone cannot prove readiness.
+        var pending = path + ".pending";
+        File.WriteAllText(pending, pid.ToString());
+        File.Move(pending, path, true);
     }
 
     private static void TestProfiles()
@@ -224,6 +262,44 @@ internal static class Program
         }
     }
 
+    private static async Task CheckStartupCapture(string engine)
+    {
+        var crashLog = Path.Combine(_root, "early-crash.log");
+        await using (var core = new NativeCore(Environment.ProcessPath!, new[] { "--crash-core" }, crashLog)) {
+            await core.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            var details = File.ReadAllText(crashLog, Encoding.UTF8);
+            Assert(core.ExitCode == 23 && details.Contains("early stdout diagnostic") && details.Contains("ошибка до открытия журнала"),
+                "early engine stdout, Unicode stderr and exit code are captured before the normal log exists");
+        }
+        File.Delete(crashLog);
+        Assert(!File.Exists(crashLog), "captured startup handles are released after an early crash");
+
+        var stopLog = Path.Combine(_root, "cooperative-core.log");
+        await using (var core = new NativeCore(Environment.ProcessPath!, new[] { "--cooperative-core" }, stopLog)) {
+            await WaitUntil(() => File.Exists(stopLog) && new FileInfo(stopLog).Length > 0, TimeSpan.FromSeconds(5));
+            await core.StopAsync();
+            Assert(!core.ForcedStop && core.ExitCode == 0 && File.ReadAllText(stopLog).Contains("cooperative core stopped"),
+                "redirecting startup output preserves graceful hidden-console shutdown");
+        }
+
+        var runtimeConfig = Path.Combine(_root, "runtime-failure.json");
+        var runtimeLog = Path.Combine(_root, "runtime-failure.log");
+        var port = CoreSession.FreePort();
+        File.WriteAllText(runtimeConfig, JsonSerializer.Serialize(new {
+            inbounds = new[] {
+                new { type = "mixed", tag = "one", listen = "127.0.0.1", listen_port = port },
+                new { type = "mixed", tag = "two", listen = "127.0.0.1", listen_port = port }
+            }, outbounds = new[] { new { type = "direct", tag = "direct" } }
+        }));
+        await CoreSession.CheckConfigAsync(engine, runtimeConfig);
+        await using (var core = new NativeCore(engine, runtimeConfig, runtimeLog)) {
+            await core.Process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            Assert(core.ExitCode != 0 && File.ReadAllText(runtimeLog).Contains("FATAL", StringComparison.OrdinalIgnoreCase),
+                "a real sing-box startup failure after successful config validation retains the fatal error");
+        }
+        File.Delete(runtimeConfig); File.Delete(runtimeLog); File.Delete(stopLog);
+    }
+
     private static async Task RepeatedSessions()
     {
         for (var i = 0; i < 3; i++)
@@ -264,10 +340,10 @@ internal static class Program
         Assert(InputRules.Host("[2001:db8::1]") == "2001:db8::1", "IPv6 proxy addresses");
         Assert(InputRules.Site("https://пример.рф/path?q=1").Value == "xn--e1afmkfd.xn--p1ai", "URL and IDN domain normalization");
         Assert(InputRules.Site("*.Example.COM").Value == "example.com", "domain wildcard normalization");
-        Assert(InputRules.Site("192.168.1.87/24").Value == "192.168.1.0/24", "CIDR network normalization");
+        Assert(InputRules.Site("198.51.100.87/24").Value == "198.51.100.0/24", "CIDR network normalization");
         Assert(InputRules.Site("2001:db8::cafe/64").Value == "2001:db8::/64", "IPv6 CIDR network normalization");
         Throws(() => InputRules.Host("https://proxy.example:1080"), "reject URLs in proxy host field");
-        Throws(() => InputRules.Site("192.168.1.1/99"), "reject invalid CIDR prefix");
+        Throws(() => InputRules.Site("198.51.100.1/99"), "reject invalid CIDR prefix");
         Throws(() => InputRules.Site("*"), "reject universal domain bypass");
         Throws(() => InputRules.App("chrome.exe"), "reject unqualified app path");
         Throws(() => new ProxySettings { Host = "proxy.example", Port = 0 }.Validate(), "reject invalid port");
@@ -383,7 +459,7 @@ internal static class Program
             var catalog = L.ReadCatalog(language.Code);
             Assert(catalog.Keys.OrderBy(k => k).SequenceEqual(keys) && catalog.Values.All(v => !string.IsNullOrWhiteSpace(v)), "complete translation catalog: " + language.Code);
             L.Current.Set(language.Code);
-            Assert(L.Current.Help.Count == 9 && L.Current.Help.All(h => h.Body.Length > 140), "nine detailed help topics: " + language.Code);
+            Assert(L.Current.Help.Count == 12 && L.Current.Help.All(h => h.Body.Length > 140), "twelve detailed help topics: " + language.Code);
             foreach (var pair in catalog)
             {
                 var indexes = Regex.Matches(pair.Value, @"\{(\d+)\}").Select(m => int.Parse(m.Groups[1].Value)).ToArray();

@@ -9,9 +9,9 @@ using Microsoft.Win32;
 
 internal static class UninstallProgram
 {
-    private static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "ProxyChoiceApp");
-    private static readonly string[] Files = { "ProxyChoiceApp.exe", "README.txt", "LICENSE.txt", "THIRD-PARTY-NOTICES.txt", "DOTNET-LICENSE.txt", "DOTNET-THIRD-PARTY-NOTICES.txt", "WINDOWS-DESKTOP-LICENSE.txt" };
-    private static readonly string[] Guides = { "Guide-ru.md", "Guide-en.md", "Guide-de.md", "Guide-es.md" };
+    private static readonly string Folder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "ProxyChoicePro");
+    private static readonly string[] Files = { "ProxyChoicePro.exe", "README.txt", "LICENSE.txt", "THIRD-PARTY-NOTICES.txt", "DOTNET-LICENSE.txt", "DOTNET-THIRD-PARTY-NOTICES.txt", "WINDOWS-DESKTOP-LICENSE.txt" };
+    private static readonly string[] Guides = { "Guide-ru.md", "Guide-en.md", "Guide-de.md", "Guide-es.md", "Guide-fr.md", "Guide-zh.md", "Keenetic-en.md", "Keenetic-ru.md", "Keenetic-fr.md", "Keenetic-de.md", "Keenetic-es.md", "Keenetic-zh.md", "work-client.example.conf" };
 
     [STAThread]
     private static int Main(string[] args)
@@ -37,14 +37,14 @@ internal static class UninstallProgram
         if (!quiet && MessageBox.Show(Texts.T("UninstallQuestion"), Texts.T("UninstallTitle"), MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes) return 0;
         try
         {
-            foreach (var process in Process.GetProcessesByName("ProxyChoiceApp"))
+            foreach (var process in Process.GetProcessesByName("ProxyChoicePro"))
             using (process)
             {
                 try
                 {
-                    if (string.Equals(process.MainModule.FileName, Path.Combine(Folder, "ProxyChoiceApp.exe"), StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(process.MainModule.FileName, Path.Combine(Folder, "ProxyChoicePro.exe"), StringComparison.OrdinalIgnoreCase))
                     {
-                        if (!quiet) MessageBox.Show(Texts.T("SetupRunning"), "ProxyChoiceApp");
+                        if (!quiet) MessageBox.Show(Texts.T("SetupRunning"), "ProxyChoicePro");
                         return 1;
                     }
                 }
@@ -56,17 +56,17 @@ internal static class UninstallProgram
                 foreach (var name in Guides) if (File.Exists(Path.Combine(docs, name))) File.Delete(Path.Combine(docs, name));
                 if (Directory.GetFileSystemEntries(docs).Length == 0) Directory.Delete(docs);
             }
-            DeleteShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "ProxyChoiceApp.lnk"));
-            var programs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "ProxyChoiceApp");
-            DeleteShortcut(Path.Combine(programs, "ProxyChoiceApp.lnk"));
-            DeleteShortcut(Path.Combine(programs, "Удалить ProxyChoiceApp.lnk"));
-            DeleteShortcut(Path.Combine(programs, "Uninstall ProxyChoiceApp.lnk"));
+            DeleteShortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "ProxyChoicePro.lnk"));
+            var programs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "ProxyChoicePro");
+            DeleteShortcut(Path.Combine(programs, "ProxyChoicePro.lnk"));
+            DeleteShortcut(Path.Combine(programs, "Удалить ProxyChoicePro.lnk"));
+            DeleteShortcut(Path.Combine(programs, "Uninstall ProxyChoicePro.lnk"));
             if (Directory.Exists(programs) && Directory.GetFileSystemEntries(programs).Length == 0) Directory.Delete(programs);
-            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\ProxyChoiceApp", false);
-            var helper = Path.Combine(Path.GetTempPath(), "ProxyChoiceApp-uninstall-" + Guid.NewGuid().ToString("N") + ".exe");
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\ProxyChoicePro", false);
+            var helper = Path.Combine(Path.GetTempPath(), "ProxyChoicePro-uninstall-" + Guid.NewGuid().ToString("N") + ".exe");
             File.Copy(Application.ExecutablePath, helper);
             Process.Start(new ProcessStartInfo(helper, "--cleanup " + Process.GetCurrentProcess().Id) { UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden });
-            if (!quiet) MessageBox.Show(Texts.T("UninstallDone"), "ProxyChoiceApp", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (!quiet) MessageBox.Show(Texts.T("UninstallDone"), "ProxyChoicePro", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return 0;
         }
         catch (Exception error) { if (!quiet) MessageBox.Show(error.Message, Texts.T("Error"), MessageBoxButtons.OK, MessageBoxIcon.Error); return 1; }

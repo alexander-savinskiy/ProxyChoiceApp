@@ -2,7 +2,7 @@
   <Grid Margin="24"><Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
     <TextBlock Text="{loc:Tr ProfileName}" FontSize="19" FontWeight="SemiBold" Margin="0,0,0,16" />
     <TextBox x:Name="NameBox" Grid.Row="1" AutomationProperties.Name="{loc:Tr ProfileName}" MaxLength="60" />
-    <TextBlock x:Name="ErrorText" Grid.Row="2" Foreground="#A74537" FontSize="14" Margin="0,12,0,0" />
+    <TextBlock x:Name="ErrorText" Grid.Row="2" Foreground="{DynamicResource ErrorInk}" FontSize="14" Margin="0,12,0,0" />
     <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right"><Button Content="{loc:Tr Cancel}" IsCancel="True" Margin="0,0,12,0" /><Button Content="{loc:Tr Save}" IsDefault="True" Style="{StaticResource Primary}" Click="Save_Click" /></StackPanel>
   </Grid>
 </Window>

@@ -12,8 +12,8 @@ using Microsoft.Win32;
 
 internal static class SetupProgram
 {
-    internal static readonly string InstallFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "ProxyChoiceApp");
-    internal static readonly string[] PayloadNames = { "ProxyChoiceApp.exe", "Uninstall.exe", "README.txt", "LICENSE.txt", "THIRD-PARTY-NOTICES.txt", "DOTNET-LICENSE.txt", "DOTNET-THIRD-PARTY-NOTICES.txt", "WINDOWS-DESKTOP-LICENSE.txt", "docs/Guide-ru.md", "docs/Guide-en.md", "docs/Guide-de.md", "docs/Guide-es.md" };
+    internal static readonly string InstallFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "ProxyChoicePro");
+    internal static readonly string[] PayloadNames = { "ProxyChoicePro.exe", "Uninstall.exe", "README.txt", "LICENSE.txt", "THIRD-PARTY-NOTICES.txt", "DOTNET-LICENSE.txt", "DOTNET-THIRD-PARTY-NOTICES.txt", "WINDOWS-DESKTOP-LICENSE.txt", "docs/Guide-ru.md", "docs/Guide-en.md", "docs/Guide-de.md", "docs/Guide-es.md", "docs/Guide-fr.md", "docs/Guide-zh.md", "docs/Keenetic-en.md", "docs/Keenetic-ru.md", "docs/Keenetic-fr.md", "docs/Keenetic-de.md", "docs/Keenetic-es.md", "docs/Keenetic-zh.md", "docs/work-client.example.conf" };
 
     [STAThread]
     private static int Main(string[] args)
@@ -21,7 +21,7 @@ internal static class SetupProgram
         if (args.Length == 2 && args[0] == "--verify")
         {
             try { Extract(Path.GetFullPath(args[1])); return 0; }
-            catch (Exception error) { File.WriteAllText(Path.Combine(Path.GetTempPath(), "ProxyChoiceApp-setup-verify-error.txt"), error.ToString()); return 1; }
+            catch (Exception error) { File.WriteAllText(Path.Combine(Path.GetTempPath(), "ProxyChoicePro-setup-verify-error.txt"), error.ToString()); return 1; }
         }
         if (args.Length == 1 && args[0] == "--quiet")
         {
@@ -29,7 +29,7 @@ internal static class SetupProgram
                 if (IsAppRunning()) throw new IOException(Texts.T("SetupRunning"));
                 Extract(InstallFolder); Register(true); return 0;
             }
-            catch (Exception error) { File.WriteAllText(Path.Combine(Path.GetTempPath(), "ProxyChoiceApp-setup-error.txt"), error.ToString()); return 1; }
+            catch (Exception error) { File.WriteAllText(Path.Combine(Path.GetTempPath(), "ProxyChoicePro-setup-error.txt"), error.ToString()); return 1; }
         }
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -69,8 +69,8 @@ internal static class SetupProgram
 
     internal static bool IsAppRunning()
     {
-        var executable = Path.Combine(InstallFolder, "ProxyChoiceApp.exe");
-        foreach (var process in Process.GetProcessesByName("ProxyChoiceApp"))
+        var executable = Path.Combine(InstallFolder, "ProxyChoicePro.exe");
+        foreach (var process in Process.GetProcessesByName("ProxyChoicePro"))
         using (process)
         {
             try { if (string.Equals(process.MainModule.FileName, executable, StringComparison.OrdinalIgnoreCase)) return true; }
@@ -81,15 +81,15 @@ internal static class SetupProgram
 
     internal static void Register(bool desktop)
     {
-        var executable = Path.Combine(InstallFolder, "ProxyChoiceApp.exe");
-        var programs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "ProxyChoiceApp");
+        var executable = Path.Combine(InstallFolder, "ProxyChoicePro.exe");
+        var programs = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Programs), "ProxyChoicePro");
         Directory.CreateDirectory(programs);
-        Shortcut(Path.Combine(programs, "ProxyChoiceApp.lnk"), executable, "");
-        Shortcut(Path.Combine(programs, "Uninstall ProxyChoiceApp.lnk"), Path.Combine(InstallFolder, "Uninstall.exe"), "");
-        if (desktop) Shortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "ProxyChoiceApp.lnk"), executable, "");
-        using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\ProxyChoiceApp"))
+        Shortcut(Path.Combine(programs, "ProxyChoicePro.lnk"), executable, "");
+        Shortcut(Path.Combine(programs, "Uninstall ProxyChoicePro.lnk"), Path.Combine(InstallFolder, "Uninstall.exe"), "");
+        if (desktop) Shortcut(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "ProxyChoicePro.lnk"), executable, "");
+        using (var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall\ProxyChoicePro"))
         {
-            key.SetValue("DisplayName", "ProxyChoiceApp"); key.SetValue("DisplayVersion", "1.0.0"); key.SetValue("Publisher", "Alexander Savinskiy");
+            key.SetValue("DisplayName", "ProxyChoicePro"); key.SetValue("DisplayVersion", "1.1.3"); key.SetValue("Publisher", "Alexander Savinskiy");
             key.SetValue("InstallLocation", InstallFolder); key.SetValue("DisplayIcon", executable);
             key.SetValue("UninstallString", "\"" + Path.Combine(InstallFolder, "Uninstall.exe") + "\"");
             key.SetValue("QuietUninstallString", "\"" + Path.Combine(InstallFolder, "Uninstall.exe") + "\" --quiet");
@@ -133,7 +133,7 @@ internal sealed class SetupWindow : Form
         AutoScaleMode = AutoScaleMode.Dpi; BackColor = Color.FromArgb(246, 248, 251);
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         var header = new Panel { Dock = DockStyle.Top, Height = 126, BackColor = Color.FromArgb(20, 47, 64) };
-        header.Controls.Add(new Label { Text = "ProxyChoiceApp", Location = new Point(24, 22), Size = new Size(440, 44), Font = new Font("Segoe UI", 25, FontStyle.Bold), ForeColor = Color.White });
+        header.Controls.Add(new Label { Text = "ProxyChoicePro", Location = new Point(24, 22), Size = new Size(440, 44), Font = new Font("Segoe UI", 25, FontStyle.Bold), ForeColor = Color.White });
         _tagline = new Label { Location = new Point(26, 80), Size = new Size(430, 30), ForeColor = Color.FromArgb(176, 203, 217) };
         header.Controls.Add(_tagline);
         _language = new ComboBox { Location = new Point(470, 76), Size = new Size(166, 30), DropDownStyle = ComboBoxStyle.DropDownList, DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 25 };
@@ -149,8 +149,8 @@ internal sealed class SetupWindow : Form
         _progress = new ProgressBar { Location = new Point(24, 409), Size = new Size(612, 8), Visible = false, Style = ProgressBarStyle.Marquee };
         _install = new Button { Location = new Point(436, 439), Size = new Size(200, 44), BackColor = Color.FromArgb(8, 127, 112), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
         _install.FlatAppearance.BorderSize = 0; _install.Click += InstallClick;
-        var contact = new LinkLabel { Text = "© 2026 Alexander Savinskiy · A.savinskiy@gmai.com", Location = new Point(24, 500), Size = new Size(612, 25), LinkColor = Color.FromArgb(8, 127, 112) };
-        contact.LinkClicked += delegate { Process.Start(new ProcessStartInfo("mailto:A.savinskiy@gmai.com") { UseShellExecute = true }); };
+        var contact = new LinkLabel { Text = "© 2026 Alexander Savinskiy · a.savinskiy@gmail.com", Location = new Point(24, 500), Size = new Size(612, 25), LinkColor = Color.FromArgb(8, 127, 112) };
+        contact.LinkClicked += delegate { Process.Start(new ProcessStartInfo("mailto:a.savinskiy@gmail.com") { UseShellExecute = true }); };
         Controls.Add(_status); Controls.Add(_progress); Controls.Add(_install); Controls.Add(contact);
         _language.SelectedIndexChanged += delegate { Texts.Set(Texts.Codes[_language.SelectedIndex]); RefreshLanguage(); };
         RefreshLanguage();
@@ -172,14 +172,14 @@ internal sealed class SetupWindow : Form
     }
     private async void InstallClick(object sender, EventArgs e)
     {
-        if (SetupProgram.IsAppRunning()) { MessageBox.Show(this, Texts.T("SetupRunning"), "ProxyChoiceApp"); return; }
+        if (SetupProgram.IsAppRunning()) { MessageBox.Show(this, Texts.T("SetupRunning"), "ProxyChoicePro"); return; }
         _installing = true; _install.Enabled = _desktop.Enabled = _launch.Enabled = _language.Enabled = false;
         _progress.Visible = true; _status.Text = Texts.T("SetupExtract");
         try
         {
             await Task.Run(() => SetupProgram.Extract(SetupProgram.InstallFolder)); SetupProgram.Register(_desktop.Checked);
             _status.Text = Texts.T("SetupDone");
-            if (_launch.Checked) Process.Start(new ProcessStartInfo(Path.Combine(SetupProgram.InstallFolder, "ProxyChoiceApp.exe")) { UseShellExecute = true });
+            if (_launch.Checked) Process.Start(new ProcessStartInfo(Path.Combine(SetupProgram.InstallFolder, "ProxyChoicePro.exe")) { UseShellExecute = true });
             _installing = false; Close();
         }
         catch (Exception error)

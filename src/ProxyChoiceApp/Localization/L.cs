@@ -50,7 +50,7 @@ public sealed class L : INotifyPropertyChanged
         CultureInfo.CurrentUICulture = CultureInfo.CurrentCulture;
         PropertyChanged?.Invoke(this, new("Item[]"));
     }
-    public IReadOnlyList<HelpSection> Help => Enumerable.Range(1, 9).Select(i => new HelpSection(this[$"Help{i}Title"], this[$"Help{i}Body"])).ToArray();
+    public IReadOnlyList<HelpSection> Help => Enumerable.Range(1, 12).Select(i => new HelpSection(this[$"Help{i}Title"], this[$"Help{i}Body"])).ToArray();
 }
 
 [MarkupExtensionReturnType(typeof(object))]

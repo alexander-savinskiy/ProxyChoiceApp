@@ -149,12 +149,13 @@ internal sealed class MockProxy : IAsyncDisposable
 
 internal sealed class DirectOrigin : IAsyncDisposable
 {
-    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly TcpListener _listener;
     private readonly CancellationTokenSource _stop = new();
     private readonly Task _accept;
     public int Requests;
+    public int Connections;
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
-    public DirectOrigin() { _listener.Start(); _accept = LoopAsync(); }
+    public DirectOrigin(IPAddress? address = null) { _listener = new(address ?? IPAddress.Loopback, 0); _listener.Start(); _accept = LoopAsync(); }
     private async Task LoopAsync()
     {
         try
@@ -162,8 +163,9 @@ internal sealed class DirectOrigin : IAsyncDisposable
             while (!_stop.IsCancellationRequested)
             {
                 using var client = await _listener.AcceptTcpClientAsync(_stop.Token);
+                Interlocked.Increment(ref Connections);
                 var stream = client.GetStream();
-                await MockProxy.Header(stream, _stop.Token);
+                try { await MockProxy.Header(stream, _stop.Token); } catch (IOException) { continue; }
                 Interlocked.Increment(ref Requests);
                 await stream.WriteAsync("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 6\r\n\r\ndirect"u8.ToArray(), _stop.Token);
             }

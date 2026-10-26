@@ -21,6 +21,9 @@ public sealed class ProxyProfiles
     public bool ProxyStore { get; set; } = true;
     public bool EnableUdp { get; set; }
     public string Language { get; set; } = "ru";
+    public bool DarkMode { get; set; }
+    public bool AutoReconnect { get; set; } = true;
+    public List<RemoteComputer> RemoteComputers { get; set; } = new();
     public bool DefaultsInitialized { get; set; }
     public List<string> ProxyApps { get; set; } = new();
 
@@ -36,6 +39,7 @@ public sealed class ProxyProfiles
         Profiles ??= new();
         if (Profiles.Count == 0) Profiles.Add(new());
         ProxyApps ??= new();
+        RemoteComputers ??= new();
         if (!L.Supported.Any(l => l.Code == Language)) Language = "ru";
         var ids = new HashSet<Guid>();
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -53,6 +57,7 @@ public sealed class ProxyProfiles
             profile.Settings ??= new();
             profile.Settings.Host ??= ""; profile.Settings.Username ??= ""; profile.Settings.Password ??= "";
             if (!Enum.IsDefined(profile.Settings.Protocol)) profile.Settings.Protocol = ProxyProtocol.Socks5;
+            if (!Enum.IsDefined(profile.Settings.Mode)) profile.Settings.Mode = ConnectionMode.Proxy;
             // Routing rules belong to the computer, not to an individual endpoint.
             profile.Settings.ProxyApps = new();
         }

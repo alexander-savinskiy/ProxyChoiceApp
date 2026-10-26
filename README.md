@@ -1,63 +1,51 @@
-# ProxyChoiceApp
+# ProxyChoicePro 1.1.3
 
-A compact Windows application that sends **selected applications through a proxy** and leaves other applications on their ordinary ISP connection.
+Windows 10/11 x64 application for selected-app proxies and work network access through WireGuard. The interface, installer and documentation support English, Russian, French, German, Spanish and Chinese.
 
-**Author:** Alexander Savinskiy · [A.savinskiy@gmai.com](mailto:A.savinskiy@gmai.com)
-**Windows:** 10/11 x64 · **License:** GPL-3.0-or-later
+[English](docs/Guide-en.md) · [Русский](docs/Guide-ru.md) · [Français](docs/Guide-fr.md) · [Deutsch](docs/Guide-de.md) · [Español](docs/Guide-es.md) · [中文](docs/Guide-zh.md)
 
-[Русский](docs/README-ru.md) · [Deutsch](docs/README-de.md) · [Español](docs/README-es.md)
-[Detailed English guide](docs/Guide-en.md) · [Русское руководство](docs/Guide-ru.md) · [Deutsches Handbuch](docs/Guide-de.md) · [Guía en español](docs/Guide-es.md)
+![ProxyChoicePro](docs/images/Main-en-dark.png)
 
-![ProxyChoiceApp](docs/images/Main-en.png)
+## Download and connect
 
-## Download and use
+Download from [Releases](https://github.com/alexander-savinskiy/ProxyChoiceApp/releases): ProxyChoicePro-Setup.exe installs shortcuts and an uninstaller; ProxyChoicePro.exe runs standalone with its bundled runtime. Portable and source ZIP archives and SHA256SUMS.txt are also supplied.
 
-The [Releases page](https://github.com/alexander-savinskiy/ProxyChoiceApp/releases) provides:
+**Public package privacy:** a clean installation has no configured proxy, WireGuard client, VPN keys or work computer. The [import template](docs/work-client.example.conf) contains only `REPLACE_WITH_...` placeholders. Complete it with settings issued for your own client; an unfinished template is rejected. Enter and save your real settings locally. Published screenshots show an empty profile. Documentation/test addresses use reserved example networks, and the release build audits source and archive contents before publishing.
 
-- **ProxyChoiceApp-Setup.exe** — self-extracting installer, shortcuts and uninstaller.
-- **ProxyChoiceApp.exe** — standalone executable; no separate .NET installation.
-- **win-x64.zip** — standalone executable with documentation and licenses.
-- **source.zip** — application source plus the exact bundled engine and its upstream source.
-- **SHA256SUMS.txt** — release checksums.
+For work access select **Work network**, import a WireGuard **client** .conf issued for this laptop, and click **Connect**. Add a work PC IP under **Computers** and open normal Windows Remote Desktop. A reachable TCP probe verifies work access. See the [Keenetic guide](docs/Keenetic-en.md) for router-side client registration. Knowing the router's public IP alone does not establish VPN access.
 
-Choose SOCKS5, HTTP or HTTPS, enter the server, port and credentials, select your apps, and click **Connect**. Windows asks for administrator permission when enabling the TUN interface. **Test proxy** works without enabling the tunnel. **Disconnect** and exiting stop the owned core and restore ordinary routing.
+Work mode routes only the configured work networks. It supports IPv4, IPv6 and optional preshared keys. Other Internet traffic retains ordinary routing. Imported DNS settings are not installed; work PC favorites use IP addresses. Profiles with 0.0.0.0/0 or ::/0 require explicit work routes. Scripts, multiple peers and default work routes are rejected. Overlapping home/work subnets are reported; individual PC /32 routes can reduce the conflict, but the same IP cannot identify two different destinations.
 
-## Application choices
+**Proxy mode** retains SOCKS5, HTTP and HTTPS with per-application choices, optional SOCKS5 UDP, Microsoft Store rules, shared application selections and proxy profiles. The app's Internet probes use the selected proxy. Other apps remain direct and private LAN addresses remain direct in this mode. DNS uses proxy DoH and FakeIP with direct resolution for direct connections. Browser PWAs share the browser's executable. Store rules can cover shared Microsoft login/update endpoints; third-party downloaders may need separate selection.
 
-ProxyChoiceApp's internet access always uses the proxy while connected. Microsoft Store is selected by default and can be disabled. Chrome and Edge can be selected independently. Installed YouTube is added on first start when detected. A YouTube browser app shares its browser's executable, so selecting it selects that entire browser.
+The application list includes Chrome, Edge, installed browsers, ChatGPT, Codex and codex-computer-use-swift. Codex groups its detected desktop, CLI and code-mode executables. Selections sharing an executable stay linked. Missing apps remain visible as unavailable; Microsoft Store has a separate selection. Prepared WireGuard files can carry validated ProxyChoicePro route/probe comments; see section 13 of the guides.
 
-App choices are shared across proxy profiles. Apply changes, then restart affected apps to close existing connections. Private LAN addresses such as **192.168.8.1** remain direct.
+## Interface and recovery
 
-The interface and its detailed Help tab support **English, French, Spanish, Chinese, German and Russian**, with flag icons and immediate switching. The main window shows speed and received/sent MB. The journal can be cleared and exported.
+Six wrapping tabs separate connection, computers, applications, diagnostics, journal and help. The connection form stacks on narrow windows. Night mode and language are saved, and the window has a visible outline. Status colors apply to the entire icon: grey disconnected, amber connecting, green verified, red access error; there is no separate taskbar status overlay.
 
-## Routing details
+Diagnostics distinguishes engine startup, actual work TCP access, a chosen RDP service and subnet overlaps. A successful TCP connection is not a Windows credential test. Automatic recovery retries after 5, 10, 20, 40 and then 60 seconds on connection failure or resume. Manual disconnect, stop reconnecting and exit cancel retries. This is not a persistent kill switch: stopping the engine restores ordinary Windows routing.
 
-The bundled sing-box engine provides process routing through a TUN interface. The default outbound is direct. Selected executable paths and the app itself route to the proxy. Store rules cover its processes and known Microsoft service endpoints; shared Microsoft sign-in and Windows Update addresses can also follow those rules. Publisher downloads for third-party Win32 Store apps may require adding their downloader separately.
-
-Selected-app UDP is disabled by default. Enable it only with a compatible SOCKS5 server. Unsupported UDP and ICMP are rejected for selected routes; unselected apps retain direct access. DNS uses proxy DoH and FakeIP mappings, while direct connections resolve through the active adapter's DNS. DNS service requests may therefore use the proxy even for unselected apps.
-
-Totals measure the current tunnel session, including direct and proxy traffic handled by the engine; one displayed MB is 1,048,576 bytes. This is not a persistent kill switch: if the core exits or the app is closed, Windows returns to the ISP.
-
-References: [sing-box route rules](https://sing-box.sagernet.org/configuration/route/rule/), [Microsoft Store endpoints](https://learn.microsoft.com/en-us/intune/fundamentals/endpoints), [Delivery Optimization endpoints](https://learn.microsoft.com/en-us/windows/deployment/do/delivery-optimization-endpoints).
+Traffic totals cover the current engine session; displayed MB use 1,048,576 bytes. RDP files enable NLA/CredSSP and ask Windows for credentials; the application does not save RDP passwords.
 
 ## Data and lifecycle
 
-Profiles are saved under `%LOCALAPPDATA%\ProxyChoiceApp`. Passwords use Windows DPAPI for the current Windows user. Plaintext core configurations are private and removed after startup. Child processes are owned by a Windows Job Object; startup/check/shutdown deadlines and forced-stop fallback prevent indefinite waits. Log clearing removes entries from the display and export without disturbing the core's open file. Session logs are deleted on disconnect.
+Profiles, keys, proxy credentials and favorites are protected by Windows DPAPI under `%LOCALAPPDATA%\ProxyChoicePro`. First launch migrates the prior ProxyChoiceApp encrypted profile store while retaining the original. The engine's private plaintext configuration is removed after startup. Owned child processes use Windows Job Objects, bounded startup/check/shutdown and forced termination as needed. Closing the app stops its engine and removes session files. Journal exports redact known proxy credentials and WireGuard private/preshared keys.
 
-First start can import proxy endpoints from ProxyFlow; earlier bypass lists are not reused as selections. Both applications keep separate data folders. Avoid connecting two TUN applications at the same time during routing tests.
+Administrator permission is required for Windows TUN routing. Diagnostics can test WireGuard in userspace without installing Windows routes. Avoid simultaneous TUN applications during routing tests. Windows RDP hosting must be enabled on a supported work PC edition, with suitable Windows firewall access.
 
-## Build from source
+## Build and verify
 
-Use Windows x64 and **.NET SDK 10.0.401**:
+Use Windows x64 and .NET SDK 10.0.401:
 
 ```powershell
 .\scripts\Build.ps1 -Dotnet (Get-Command dotnet).Source -OutputDirectory dist/release
 ```
 
-The build downloads the pinned sing-box 1.14.3 archive when necessary and verifies its SHA-256. The .NET runtime is pinned to 10.0.12. It generates icons, builds the app, runs local engine tests, compiles the installer using Windows' .NET Framework compiler, and packages complete source and notices. Tests exercise real per-process routing on loopback without changing Windows routes. A restricted sandbox can deny native process-table access; run the tests as the ordinary Windows user.
+The build verifies pinned sing-box 1.14.3 and its corresponding upstream source, targets .NET runtime 10.0.12, runs the real local engine tests, creates the standalone executable, compiles a six-language installer and packages source and licenses. Tests cover authenticated proxies, real encrypted WireGuard peers, work routes, RDP document validation, subnet conflicts, credential storage and process lifecycle. They do not change Windows routes. Run native routing tests as the ordinary Windows user; a restricted sandbox can deny process-table access.
 
-GitHub Actions performs the same Windows build and installer extraction checks. Pushing a `v*` tag publishes a release. No profiles, credentials, logs, caches or application binaries belong in Git history.
+GitHub Actions builds the same assets and verifies installer extraction. A version-matching v* tag publishes the release. Do not put personal profiles, keys, runtime caches or logs into source control. Internal source folders and namespaces retain ProxyChoiceApp for resource and test compatibility; user-visible branding and executable names are ProxyChoicePro.
 
 ## License
 
-Copyright © 2026 Alexander Savinskiy. ProxyChoiceApp source is **GPL-3.0-or-later**. See [LICENSE.txt](LICENSE.txt) and [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt). The engine is unmodified, separately executed and supplied with corresponding source. ProxyChoiceApp is independent and has no affiliation with SagerNet.
+© 2026 Alexander Savinskiy · [a.savinskiy@gmail.com](mailto:a.savinskiy@gmail.com). GPL-3.0-or-later; see LICENSE.txt and THIRD-PARTY-NOTICES.txt. The unmodified sing-box engine and its exact corresponding source are included. The application is independent of SagerNet and Keenetic.

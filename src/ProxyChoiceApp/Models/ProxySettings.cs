@@ -12,9 +12,12 @@ using ProxyChoiceApp.Localization;
 namespace ProxyChoiceApp.Models;
 
 public enum ProxyProtocol { Socks5, Http, Https }
+public enum ConnectionMode { Proxy, WorkNetwork }
 
 public sealed class ProxySettings
 {
+    public ConnectionMode Mode { get; set; }
+    public WorkNetworkProfile? WorkNetwork { get; set; }
     public ProxyProtocol Protocol { get; set; } = ProxyProtocol.Socks5;
     public string Host { get; set; } = "";
     public int Port { get; set; } = 1080;
@@ -32,6 +35,12 @@ public sealed class ProxySettings
     public void Validate()
     {
         Host = InputRules.Host(Host);
+        if (!Enum.IsDefined(Mode)) throw new ArgumentException(L.T("InvalidMode"));
+        if (Mode == ConnectionMode.WorkNetwork) {
+            if (WorkNetwork is null) throw new ArgumentException(L.T("ImportWorkFirst"));
+            if (Port is < 1 or > 65535) throw new ArgumentException(L.T("InvalidPort"));
+            WorkNetwork.Validate(); return;
+        }
         if (!Enum.IsDefined(Protocol)) throw new ArgumentException(L.T("InvalidProtocol"));
         if (Port is < 1 or > 65535) throw new ArgumentException(L.T("InvalidPort"));
         if (Password.Length > 0 && Username.Length == 0)
@@ -77,7 +86,7 @@ public static class InputRules
             if (parts.Length != 2 || !IPAddress.TryParse(parts[0], out ip) ||
                 !int.TryParse(parts[1], out var prefix) || prefix < 0 ||
                 prefix > (ip.AddressFamily == AddressFamily.InterNetwork ? 32 : 128))
-                throw new ArgumentException("Подсеть указывается в формате 192.168.1.0/24 или IPv6/64.");
+                throw new ArgumentException("Подсеть указывается в формате 198.51.100.0/24 или IPv6/64.");
             var bytes = ip.GetAddressBytes();
             for (var bit = prefix; bit < bytes.Length * 8; bit++) bytes[bit / 8] &= (byte)~(1 << (7 - bit % 8));
             return new($"{new IPAddress(bytes)}/{prefix}", true);
